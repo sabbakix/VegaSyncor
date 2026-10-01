@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+if [ "$1" = "configure" ]; then
+    getent group vegasyncor >/dev/null || addgroup --system vegasyncor >/dev/null
+    if [ -d /run/systemd/system ]; then
+        systemctl daemon-reload
+        systemctl enable vegasyncor.service >/dev/null 2>&1 || true
+        systemctl restart vegasyncor.service || true
+    fi
+fi
+exit 0

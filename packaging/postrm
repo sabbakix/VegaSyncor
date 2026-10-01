@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+if [ "$1" = "purge" ]; then
+    # ATTENZIONE: elimina configurazione, chiave master (password salvate) e storico.
+    # I dati di backup nelle destinazioni NON vengono toccati.
+    rm -rf /etc/vegasyncor /var/lib/vegasyncor
+    getent group vegasyncor >/dev/null && delgroup --system vegasyncor >/dev/null 2>&1 || true
+fi
+if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload || true
+fi
+exit 0
