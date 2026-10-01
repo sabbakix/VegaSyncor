@@ -4,8 +4,11 @@
 set -e
 cd "$(dirname "$0")/.."
 VERSION=${1:?specificare la versione}; shift
+VERSION=${VERSION#v}
 ARCHS=${*:-amd64 arm64}
-DEB_VERSION=$(echo "$VERSION" | sed -E 's/^v//; s/-/+/g; s/^([^0-9])/0.0.0+\1/')
+# Versione Debian: le pre-release (0.2.0-rc1) usano "~" per risultare precedenti a 0.2.0,
+# le build di sviluppo (0.1.0-3-gabc123) usano "+" per risultare successive a 0.1.0.
+DEB_VERSION=$(echo "$VERSION" | sed -E 's/-(rc|beta|alpha)/~\1/; s/-/+/g; s/^([^0-9])/0.0.0+\1/')
 GO=${GO:-go}
 mkdir -p dist
 for a in $ARCHS; do
@@ -33,7 +36,7 @@ Description: sincronizzazione pianificata di cartelle di rete per backup
  Servizio e interfaccia testuale (TUI) per copiare periodicamente
  cartelle condivise SMB/CIFS (Windows, Samba) su un server di backup.
 CTRL
-    dpkg-deb --root-owner-group --build "$R" "dist/vegasyncor_${DEB_VERSION}_$a.deb" >/dev/null
+    dpkg-deb --root-owner-group --build "$R" "dist/vegasyncor_${VERSION}_$a.deb" >/dev/null
     rm -rf "$R"
-    echo "→ dist/vegasyncor_${DEB_VERSION}_$a.deb"
+    echo "→ dist/vegasyncor_${VERSION}_$a.deb (versione Debian $DEB_VERSION)"
 done

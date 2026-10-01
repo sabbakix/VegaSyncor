@@ -139,6 +139,23 @@ make build    # bin/vegasyncor
 make deb      # dist/vegasyncor_<versione>_{amd64,arm64}.deb
 ```
 
+### Pubblicare una nuova versione
+
+Le release vengono create automaticamente da GitHub Actions
+([`.github/workflows/release.yml`](.github/workflows/release.yml)) all'invio di un tag:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Il workflow esegue i test, compila i pacchetti `.deb` e i tarball (amd64 e arm64), calcola i
+checksum e pubblica la release. Le note riportano l'elenco dei commit dal tag precedente.
+I tag con suffisso (es. `v0.2.0-rc1`) diventano *pre-release*: non vengono installati dal comando
+rapido, ma solo con `VEGASYNCOR_VERSION=0.2.0-rc1`.
+
+Per preparare gli stessi file in locale: `packaging/build-release.sh 0.2.0` (risultato in `dist/release`).
+
 Per provare senza root (solo cartelle locali, nessun montaggio reale):
 
 ```bash

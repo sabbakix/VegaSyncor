@@ -3,7 +3,7 @@ GO      ?= go
 LDFLAGS := -s -w -X main.version=$(VERSION)
 ARCHS   := amd64 arm64
 
-.PHONY: build test dist deb clean
+.PHONY: build test dist deb release clean
 
 build:
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o bin/vegasyncor ./cmd/vegasyncor
@@ -22,6 +22,10 @@ dist:
 # pacchetti .deb per Debian/Ubuntu
 deb:
 	GO=$(GO) packaging/build-deb.sh $(VERSION) $(ARCHS)
+
+# tutti i file di una release GitHub in dist/release
+release:
+	GO=$(GO) packaging/build-release.sh $(VERSION)
 
 clean:
 	rm -rf bin dist
