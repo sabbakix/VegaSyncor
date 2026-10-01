@@ -731,9 +731,23 @@ func colorizeLog(s string) string {
 			lines[i] = sMuted.Render("+ cartella  ") + l[12:]
 		case len(l) > 12 && l[0] == '.' && l[11] == ' ':
 			lines[i] = sMuted.Render("  invariato " + l[12:])
+		case isRsyncStat(l):
+			lines[i] = sMuted.Render(l)
 		case strings.HasPrefix(l, "[") || strings.HasPrefix(l, "#"):
 			lines[i] = sMuted.Render(l)
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+var rsyncStatPrefixes = []string{"Number of ", "Total ", "Literal data", "Matched data", "File list ", "sent ", "total size is"}
+
+// isRsyncStat riconosce le righe di statistiche finali di rsync (mostrate in secondo piano).
+func isRsyncStat(l string) bool {
+	for _, p := range rsyncStatPrefixes {
+		if strings.HasPrefix(l, p) {
+			return true
+		}
+	}
+	return false
 }

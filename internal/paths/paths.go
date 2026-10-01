@@ -32,5 +32,10 @@ func MountDir() string    { return filepath.Join(RuntimeDir(), "mnt") }
 func Socket() string      { return env("VEGASYNCOR_SOCKET", filepath.Join(RuntimeDir(), "vegasyncor.sock")) }
 
 // DevMode disattiva i montaggi reali (solo per sviluppo senza root):
-// le sorgenti locali vengono lette direttamente e le condivisioni SMB non sono supportate.
+// le sorgenti locali vengono lette direttamente e le condivisioni SMB sono
+// simulate con cartelle locali (vedi DevSMBRoot).
 func DevMode() bool { return os.Getenv("VEGASYNCOR_DEV") == "1" }
+
+// DevSMBRoot, in modalità sviluppo, è la cartella che simula i server SMB:
+// \\HOST\SHARE corrisponde a <DevSMBRoot>/HOST/SHARE.
+func DevSMBRoot() string { return os.Getenv("VEGASYNCOR_DEV_SMB_ROOT") }

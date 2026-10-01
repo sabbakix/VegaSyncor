@@ -87,7 +87,7 @@ func (m *Model) viewHeader() string {
 		}
 		state := sOK.Render("● servizio attivo")
 		if running > 0 {
-			state = sRun.Render(fmt.Sprintf("⟳ %d in esecuzione", running))
+			state = sRun.Render(fmt.Sprintf("↻ %d in esecuzione", running))
 		}
 		right = state + sMuted.Render("  "+m.st.Hostname+" ")
 	}
@@ -202,7 +202,7 @@ func (m *Model) viewJobs() (string, string) {
 		case j.Current != nil:
 			icon = statusIcon(api.StatusRunning)
 		case !j.Job.Enabled:
-			icon = sMuted.Render("⏸")
+			icon = sMuted.Render("‖")
 		case j.Last != nil:
 			icon = statusIcon(j.Last.Status)
 		}

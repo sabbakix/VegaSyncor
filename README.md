@@ -4,20 +4,7 @@ Servizio per Linux (Debian/Ubuntu) che **sincronizza periodicamente cartelle di 
 SMB/CIFS di PC e server Windows o di server Linux con Samba) **verso un server di backup**.
 Si gestisce con un'interfaccia testuale (TUI) utilizzabile anche via SSH.
 
-```
- VegaSyncor   1 Sincronizzazioni   2 Connessioni   3 Storico                 ● servizio attivo  backup01
-──────────────────────────────────────────────────────────────────────────────────────────────────────
-   NOME                   SORGENTE  →  DESTINAZIONE                       ULTIMA          PROSSIMA
- ✔ Contabilità            \\PC-AMM\Documenti\Contabilità → /srv/backup/…  oggi 13:00      oggi 22:00
- ⟳ Progetti CAD           \\NAS01\Progetti → /srv/backup/progetti         in corso 42%    –
-╭────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│ Contabilità                                                                                        │
-│ Da                \\PC-AMM\Documenti\Contabilità                          SOLA LETTURA             │
-│ A                 /srv/backup/contabilita                                                          │
-│ Modalità          Mirror + archivio (conserva 30 gg)                                               │
-│ Pianificazione    lun-ven 13:00,22:00  – prossima: oggi 22:00                                      │
-╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
-```
+![Dashboard di VegaSyncor: elenco delle sincronizzazioni con stato, pianificazione e avanzamento della copia in corso](docs/screenshots/01-dashboard.png)
 
 ## Caratteristiche
 
@@ -42,6 +29,29 @@ Si gestisce con un'interfaccia testuale (TUI) utilizzabile anche via SSH.
   anomalo) un mirror viene bloccato, per non cancellare il backup.
 - Copia incrementale con `rsync` (solo le differenze), limite di banda, esclusioni, storico e log
   dettagliati di ogni esecuzione.
+
+## Screenshot
+
+**Creazione/modifica di una sincronizzazione**: il riquadro in alto riassume sempre
+*sorgente ━━▶ destinazione*, con l'indicazione di sola lettura.
+
+![Form di modifica di un job con riepilogo sorgente e destinazione](docs/screenshots/02-modifica-job.png)
+
+**Scelta della cartella**: condivisioni e sottocartelle si sfogliano direttamente sul PC o server remoto.
+
+![Finestra per sfogliare le cartelle di una condivisione di rete](docs/screenshots/03-sfoglia-cartelle.png)
+
+**Simulazione**: prima di attivare un job si vede esattamente cosa verrebbe copiato, aggiornato o cancellato.
+
+![Log di una simulazione con file nuovi, aggiornati e da cancellare](docs/screenshots/05-simulazione.png)
+
+**Connessioni**: credenziali salvate e cifrate, riutilizzabili da più job.
+
+![Elenco delle connessioni SMB salvate](docs/screenshots/04-connessioni.png)
+
+**Storico**: esito di ogni esecuzione, con accesso al log dettagliato.
+
+![Storico delle esecuzioni con esiti e dettagli](docs/screenshots/06-storico.png)
 
 ## Installazione
 
@@ -156,14 +166,18 @@ rapido, ma solo con `VEGASYNCOR_VERSION=0.2.0-rc1`.
 
 Per preparare gli stessi file in locale: `packaging/build-release.sh 0.2.0` (risultato in `dist/release`).
 
-Per provare senza root (solo cartelle locali, nessun montaggio reale):
+Per provare senza root (nessun montaggio reale):
 
 ```bash
 export VEGASYNCOR_DEV=1 VEGASYNCOR_CONFIG_DIR=/tmp/vs/etc VEGASYNCOR_STATE_DIR=/tmp/vs/state \
-       VEGASYNCOR_RUNTIME_DIR=/tmp/vs/run
+       VEGASYNCOR_RUNTIME_DIR=/tmp/vs/run VEGASYNCOR_DEV_SMB_ROOT=/tmp/vs/smb
 ./bin/vegasyncor daemon &
 ./bin/vegasyncor
 ```
+
+In modalità sviluppo le condivisioni SMB sono simulate con cartelle locali:
+`\\HOST\SHARE` corrisponde a `$VEGASYNCOR_DEV_SMB_ROOT/HOST/SHARE`
+(es. `mkdir -p /tmp/vs/smb/PC-UFFICIO/Documenti`).
 
 Struttura del codice:
 

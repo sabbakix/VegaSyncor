@@ -102,10 +102,27 @@ func explainMountError(msg string) string {
 	return msg
 }
 
+// devSMB simula una condivisione con una cartella locale (solo modalità sviluppo).
+func devSMB(t SMBTarget) (*Mount, error) {
+	root := paths.DevSMBRoot()
+	if root == "" {
+		return nil, errors.New("modalità sviluppo: impostare VEGASYNCOR_DEV_SMB_ROOT per simulare le condivisioni SMB")
+	}
+	p := filepath.Join(root, t.Host, t.Share)
+	if st, err := os.Stat(p); err != nil || !st.IsDir() {
+		return nil, fmt.Errorf("mount: //%s/%s: No such file or directory → condivisione inesistente o percorso errato", t.Host, t.Share)
+	}
+	return &Mount{Point: p}, nil
+}
+
 // EnsureTools verifica che i comandi necessari siano installati.
 func EnsureTools() error {
+	tools := []string{"mount.cifs", "rsync", "mount", "umount"}
+	if paths.DevMode() {
+		tools = []string{"rsync"}
+	}
 	var missing []string
-	for _, t := range []string{"mount.cifs", "rsync", "mount", "umount"} {
+	for _, t := range tools {
 		if _, err := exec.LookPath(t); err != nil {
 			missing = append(missing, t)
 		}
@@ -135,7 +152,7 @@ func newPoint(name string) (string, error) {
 // readOnly=true usa l'opzione "ro": il kernel impedisce qualsiasi scrittura.
 func MountSMB(ctx context.Context, name string, t SMBTarget, readOnly bool) (*Mount, error) {
 	if paths.DevMode() {
-		return nil, errors.New("le condivisioni SMB non sono disponibili in modalità sviluppo")
+		return devSMB(t)
 	}
 	point, err := newPoint(name)
 	if err != nil {
@@ -256,6 +273,19 @@ func CleanupStale() []string {
 
 // ListShares elenca le condivisioni disco di un server usando smbclient (se installato).
 func ListShares(ctx context.Context, t SMBTarget) ([]string, error) {
+	if paths.DevMode() && paths.DevSMBRoot() != "" {
+		entries, err := os.ReadDir(filepath.Join(paths.DevSMBRoot(), t.Host))
+		if err != nil {
+			return nil, fmt.Errorf("smbclient: %s: server non raggiungibile", t.Host)
+		}
+		var shares []string
+		for _, e := range entries {
+			if e.IsDir() {
+				shares = append(shares, e.Name())
+			}
+		}
+		return shares, nil
+	}
 	if _, err := exec.LookPath("smbclient"); err != nil {
 		return nil, errors.New("smbclient non installato (apt install smbclient): inserire il nome della condivisione a mano")
 	}

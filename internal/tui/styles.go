@@ -80,7 +80,7 @@ func statusIcon(status string) string {
 	case api.StatusSkipped:
 		return sMuted.Render("»")
 	case api.StatusRunning:
-		return sRun.Render("⟳")
+		return sRun.Render("↻")
 	}
 	return sMuted.Render("·")
 }
