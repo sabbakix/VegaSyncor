@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,12 +64,16 @@ func New(version string) (*Daemon, error) {
 		sem:     make(chan struct{}, cfg.MaxParallel),
 		started: time.Now(),
 	}
+	if !paths.DevMode() {
+		if p := mount.DetectEnvironment().MountProblem(); p != "" {
+			d.warnings = append(d.warnings, p)
+		}
+	}
 	if err := mount.EnsureTools(); err != nil {
 		d.warnings = append(d.warnings, err.Error())
-		slog.Warn(err.Error())
 	}
-	if os.Geteuid() != 0 && !paths.DevMode() {
-		d.warnings = append(d.warnings, "il servizio non è in esecuzione come root: i montaggi falliranno")
+	for _, w := range d.warnings {
+		slog.Warn(w)
 	}
 	d.loadHistory()
 	return d, nil
@@ -183,7 +188,7 @@ func (d *Daemon) finish(jobID string, r *api.Run, status, msg string) {
 	defer d.mu.Unlock()
 	r.End = time.Now()
 	r.Status = status
-	r.Message = msg
+	r.Message = strings.Join(strings.Fields(msg), " ") // sempre su una riga
 	r.Phase = ""
 	r.Progress = nil
 	delete(d.running, jobID)

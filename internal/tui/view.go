@@ -98,12 +98,39 @@ func (m *Model) viewHeader() string {
 		gap = 1
 	}
 	out := line + strings.Repeat(" ", gap) + right + "\n" + rule(m.w)
-	if m.st != nil {
-		for _, w := range m.st.Warnings {
-			out += "\n" + sWarn.Render(" ⚠ "+trunc(w, m.w-4))
-		}
+	if m.st != nil && len(m.st.Warnings) > 0 && m.form == nil {
+		out += "\n" + m.viewWarnings()
 	}
 	return out
+}
+
+func (m *Model) warningsHeight() int {
+	if m.st == nil || len(m.st.Warnings) == 0 {
+		return 0
+	}
+	return lipgloss.Height(m.viewWarnings())
+}
+
+// viewWarnings mostra in evidenza i problemi dell'ambiente segnalati dal servizio
+// (es. container non privilegiato), con il testo completo a capo.
+func (m *Model) viewWarnings() string {
+	inner := max(m.w-6, 20)
+	var parts []string
+	for _, w := range m.st.Warnings {
+		txt := lipgloss.NewStyle().Width(inner - 2).Render(w)
+		lines := strings.Split(txt, "\n")
+		for i, l := range lines {
+			prefix := "  "
+			if i == 0 {
+				prefix = "⚠ "
+			}
+			lines[i] = sWarn.Render(prefix + strings.TrimRight(l, " "))
+		}
+		parts = append(parts, strings.Join(lines, "\n"))
+	}
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cWarn).
+		Padding(0, 1).Width(m.w - 2)
+	return box.Render(strings.Join(parts, "\n"))
 }
 
 func (m *Model) viewFooter(help string) string {
@@ -193,7 +220,7 @@ func (m *Model) viewJobs() (string, string) {
 	hdr += pad("ULTIMA", lastW) + " " + pad("PROSSIMA", nextW)
 	b.WriteString(sMuted.Render(hdr) + "\n")
 
-	listH := max(m.h-22, 3)
+	listH := max(m.h-22-m.warningsHeight(), 3)
 	off := listWindow(m.jobCur, 0, len(jobs), listH)
 	for i := off; i < len(jobs) && i < off+listH; i++ {
 		j := jobs[i]
@@ -304,7 +331,15 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 			} else if r.Status == api.StatusWarning {
 				st = sWarn
 			}
-			lines = append(lines, lbl("")+st.Render(trunc(r.Message, w-20)))
+			// i messaggi di errore possono essere lunghi: vanno a capo (max 5 righe)
+			msgW := max(w-22, 20)
+			wrapped := strings.Split(lipgloss.NewStyle().Width(msgW).Render(strings.Join(strings.Fields(r.Message), " ")), "\n")
+			if len(wrapped) > 5 {
+				wrapped = append(wrapped[:4], trunc(strings.TrimSpace(wrapped[4])+" …", msgW))
+			}
+			for _, l := range wrapped {
+				lines = append(lines, lbl("")+st.Render(strings.TrimRight(l, " ")))
+			}
 		}
 	}
 	return sBox.Width(m.w - 2).Render(strings.Join(lines, "\n"))
@@ -369,7 +404,7 @@ func (m *Model) viewHistory() (string, string) {
 	var b strings.Builder
 	b.WriteString(sMuted.Render("   "+pad("AVVIO", startW)+" "+pad("JOB", jobW)+" "+pad("DURATA", durW)+" "+
 		pad("ESITO", stW)+" DETTAGLI") + "\n")
-	listH := max(m.h-8, 3)
+	listH := max(m.h-8-m.warningsHeight(), 3)
 	m.histOffset = listWindow(m.histCur, m.histOffset, len(m.history), listH)
 	for i := m.histOffset; i < len(m.history) && i < m.histOffset+listH; i++ {
 		r := m.history[i]

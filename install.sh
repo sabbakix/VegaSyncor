@@ -33,6 +33,14 @@ systemctl daemon-reload
 systemctl enable --now vegasyncor.service
 systemctl restart vegasyncor.service
 
+# verifica che l'ambiente possa montare le condivisioni SMB (es. container non privilegiato)
+if ! CHECK=$(/usr/bin/vegasyncor check 2>&1); then
+    echo
+    echo "############################################################"
+    printf '%s\n' "$CHECK"
+    echo "############################################################"
+fi
+
 cat <<MSG
 
 VegaSyncor installato e avviato.

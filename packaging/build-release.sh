@@ -32,7 +32,11 @@ install -m755 packaging/vegasyncor-install.sh "$OUT/vegasyncor-install.sh"
 # note di rilascio: elenco dei commit dal tag precedente
 REF=HEAD
 git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null && REF=v$VERSION
-PREV=$(git describe --tags --abbrev=0 --match 'v*' "$REF^" 2>/dev/null || true)
+# per le versioni stabili il confronto è con l'ultima stabile (le pre-release vengono ignorate)
+case "$VERSION" in
+*-*) PREV=$(git describe --tags --abbrev=0 --match 'v*' "$REF^" 2>/dev/null || true) ;;
+*) PREV=$(git describe --tags --abbrev=0 --match 'v*' --exclude 'v*-*' "$REF^" 2>/dev/null || true) ;;
+esac
 {
     case "$VERSION" in
     *-*)

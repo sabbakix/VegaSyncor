@@ -7,12 +7,14 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
 	"vegasyncor/internal/api"
 	"vegasyncor/internal/daemon"
+	"vegasyncor/internal/mount"
 	"vegasyncor/internal/paths"
 	"vegasyncor/internal/tui"
 )
@@ -25,6 +27,7 @@ Uso:
   vegasyncor                 apre l'interfaccia di gestione (TUI)
   vegasyncor daemon          avvia il servizio (normalmente tramite systemd)
   vegasyncor status          mostra lo stato dei job
+  vegasyncor check           verifica che il sistema possa montare le condivisioni SMB
   vegasyncor run <job>       avvia subito un job (nome o ID)
   vegasyncor dry-run <job>   simula un job senza modificare nulla
   vegasyncor version         mostra la versione
@@ -43,6 +46,8 @@ func main() {
 		err = runDaemon()
 	case "status":
 		err = printStatus()
+	case "check":
+		os.Exit(runCheck())
 	case "run", "dry-run":
 		if len(os.Args) < 3 {
 			err = fmt.Errorf("specificare il job")
@@ -132,6 +137,9 @@ func printStatus() error {
 	if err != nil {
 		return err
 	}
+	for _, w := range st.Warnings {
+		fmt.Printf("ATTENZIONE: %s\n\n", w)
+	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, "JOB\tSTATO\tULTIMA\tESITO\tPROSSIMA")
 	for _, j := range st.Jobs {
@@ -154,4 +162,53 @@ func printStatus() error {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", j.Job.Name, state, last, res, next)
 	}
 	return tw.Flush()
+}
+
+// runCheck stampa la diagnostica dell'ambiente; restituisce 1 se ci sono problemi bloccanti.
+func runCheck() int {
+	fmt.Println("Verifica dell'ambiente VegaSyncor")
+	fmt.Println()
+	code := 0
+	for _, c := range mount.Diagnose() {
+		icon := "  OK   "
+		switch c.Level {
+		case mount.CheckWarn:
+			icon = "  AVV. "
+		case mount.CheckFail:
+			icon = "  ERR. "
+			code = 1
+		}
+		fmt.Printf("%s %s\n", icon, c.Name)
+		if c.Detail != "" {
+			for _, l := range wrapText(c.Detail, 70) {
+				fmt.Printf("         %s\n", l)
+			}
+		}
+	}
+	fmt.Println()
+	if code == 0 {
+		fmt.Println("Il sistema può eseguire le sincronizzazioni.")
+	} else {
+		fmt.Println("Ci sono problemi da risolvere: le sincronizzazioni con cartelle di rete non funzioneranno.")
+	}
+	return code
+}
+
+func wrapText(s string, width int) []string {
+	var lines []string
+	line := ""
+	for _, w := range strings.Fields(s) {
+		if line != "" && len([]rune(line))+1+len([]rune(w)) > width {
+			lines = append(lines, line)
+			line = w
+		} else if line == "" {
+			line = w
+		} else {
+			line += " " + w
+		}
+	}
+	if line != "" {
+		lines = append(lines, line)
+	}
+	return lines
 }

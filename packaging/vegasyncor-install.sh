@@ -49,6 +49,14 @@ DEBIAN_FRONTEND=noninteractive apt-get install -y "$TMP/$DEB" smbclient
 
 echo
 systemctl --no-pager --lines=0 status vegasyncor || true
+
+# verifica che l'ambiente possa montare le condivisioni SMB (es. container non privilegiato)
+if ! CHECK=$(/usr/bin/vegasyncor check 2>&1); then
+    echo
+    echo "############################################################"
+    printf '%s\n' "$CHECK"
+    echo "############################################################"
+fi
 cat <<MSG
 
 VegaSyncor $VERSION installato.

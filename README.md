@@ -81,6 +81,7 @@ password salvate non sono più decifrabili (andrebbero reinserite).
 ```bash
 sudo vegasyncor              # apre la TUI
 sudo vegasyncor status       # stato sintetico dei job
+sudo vegasyncor check        # verifica che il sistema possa montare le condivisioni SMB
 sudo vegasyncor run "Contabilità"      # avvia subito un job e ne mostra l'avanzamento
 sudo vegasyncor dry-run "Contabilità"  # simulazione
 journalctl -u vegasyncor -f  # log del servizio
@@ -113,6 +114,25 @@ solo agli amministratori.
 | Connessioni | `n` nuova · `Invio` modifica · `t` prova · `d` elimina |
 | Storico | `Invio` apre il log dell'esecuzione · `r` aggiorna |
 | Form | `↑↓`/`Tab` campo · `←→` scelta · `spazio` attiva/disattiva · `Invio` sfoglia · `Ctrl+S` salva · `Esc` annulla |
+
+## Container (LXC, Proxmox, Docker)
+
+VegaSyncor monta le condivisioni tramite il kernel (`mount.cifs`). Nei **container non privilegiati**
+(ad esempio i container LXC predefiniti di Proxmox) il kernel non lo consente e ogni sincronizzazione
+con cartelle di rete fallisce con `mount error(1): Operation not permitted`.
+
+VegaSyncor riconosce la situazione: lo segnala durante l'installazione, in evidenza nella TUI, in
+`vegasyncor status` e con `vegasyncor check`. Soluzioni:
+
+- **Proxmox / LXC**: usare un container *privilegiato* con la funzionalità SMB/CIFS attiva. Proxmox
+  non converte un container esistente: va fatto backup e ripristino come privilegiato, poi
+  ```bash
+  pct restore <NUOVO-ID> <backup>.tar.zst --unprivileged 0
+  pct set <NUOVO-ID> --features mount=cifs
+  ```
+  (dall'interfaccia web: *Opzioni → Funzionalità → SMB/CIFS*).
+- **Docker**: avviare il container con `--privileged` (oppure `--cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH`).
+- In alternativa una **macchina virtuale**, che non ha limitazioni.
 
 ## File e cartelle
 

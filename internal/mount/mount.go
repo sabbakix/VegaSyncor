@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -71,7 +72,7 @@ func run(ctx context.Context, name string, args ...string) error {
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		msg := strings.TrimSpace(string(out))
+		msg := cleanOutput(string(out))
 		if msg == "" {
 			msg = err.Error()
 		}
@@ -80,10 +81,69 @@ func run(ctx context.Context, name string, args ...string) error {
 	return nil
 }
 
+// cleanOutput riduce l'output di mount a una riga, senza i rimandi al manuale.
+func cleanOutput(out string) string {
+	var parts []string
+	for _, l := range strings.Split(out, "\n") {
+		l = strings.TrimSpace(l)
+		if l == "" || strings.HasPrefix(l, "Refer to the mount.cifs(8)") {
+			continue
+		}
+		parts = append(parts, l)
+	}
+	return strings.Join(parts, " ")
+}
+
+func uptime() float64 {
+	raw, err := os.ReadFile("/proc/uptime")
+	if err != nil {
+		return 0
+	}
+	var v float64
+	fmt.Sscanf(string(raw), "%f", &v)
+	return v
+}
+
+var dmesgRe = regexp.MustCompile(`^\[\s*([0-9]+\.[0-9]+)\]\s*(.*)$`)
+
+// kernelCIFSMessages restituisce i messaggi CIFS del kernel registrati dopo since
+// (secondi dall'avvio): spiegano il vero motivo di un montaggio fallito.
+func kernelCIFSMessages(since float64) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "dmesg")
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return parseCIFSMessages(string(out), since)
+}
+
+func parseCIFSMessages(out string, since float64) string {
+	var msgs []string
+	for _, l := range strings.Split(out, "\n") {
+		m := dmesgRe.FindStringSubmatch(l)
+		if m == nil || !strings.Contains(m[2], "CIFS") {
+			continue
+		}
+		var ts float64
+		fmt.Sscanf(m[1], "%f", &ts)
+		if ts >= since-1 {
+			msgs = append(msgs, m[2])
+		}
+	}
+	if len(msgs) > 3 {
+		msgs = msgs[len(msgs)-3:]
+	}
+	return strings.Join(msgs, "; ")
+}
+
 // explainMountError aggiunge un suggerimento in italiano agli errori più comuni di mount.cifs.
 func explainMountError(msg string) string {
 	hints := map[string]string{
 		"Permission denied":         "utente o password errati, oppure permessi insufficienti sulla condivisione",
+		"Operation not permitted":   epermHint(),
 		"No such file or directory": "condivisione inesistente o percorso errato",
 		"Host is down":              "server non raggiungibile oppure versione SMB non supportata (provare a impostarla)",
 		"could not resolve address": "nome host non risolvibile: provare con l'indirizzo IP",
@@ -100,6 +160,22 @@ func explainMountError(msg string) string {
 		}
 	}
 	return msg
+}
+
+// epermHint spiega "Operation not permitted" in base all'ambiente in cui gira il servizio.
+func epermHint() string {
+	env := DetectEnvironment()
+	switch {
+	case env.Unprivileged:
+		return env.Advice()
+	case env.Container == "lxc":
+		return "container LXC privilegiato: abilitare la funzionalità SMB/CIFS del container (Proxmox: pct set <ID> --features mount=cifs, poi riavviarlo); se è già attiva, controllare utente, password e dominio"
+	case env.Container != "":
+		return "il servizio gira in un container (" + env.Container + ") che potrebbe non consentire i montaggi: " + env.Advice()
+	case os.Geteuid() != 0:
+		return "il servizio non è in esecuzione come root (avviarlo con systemctl start vegasyncor)"
+	}
+	return "il server ha rifiutato l'accesso: controllare utente, password e dominio (per un utente locale di Windows lasciare vuoto il dominio) e provare a impostare la versione SMB"
 }
 
 // devSMB simula una condivisione con una cartella locale (solo modalità sviluppo).
@@ -176,8 +252,12 @@ func MountSMB(ctx context.Context, name string, t SMBTarget, readOnly bool) (*Mo
 		opts = append(opts, "vers="+t.SMBVersion)
 	}
 	unc := "//" + t.Host + "/" + t.Share
+	since := uptime()
 	if err := run(ctx, "mount", "-t", "cifs", unc, point, "-o", strings.Join(opts, ",")); err != nil {
 		os.Remove(point)
+		if k := kernelCIFSMessages(since); k != "" {
+			err = fmt.Errorf("%w [kernel: %s]", err, k)
+		}
 		return nil, err
 	}
 	return &Mount{Point: point}, nil
