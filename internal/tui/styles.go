@@ -38,6 +38,7 @@ var (
 	sFocusBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 1)
 	sRule     = lipgloss.NewStyle().Foreground(cFaint)
 	sClock    = lipgloss.NewStyle().Bold(true).Foreground(cText)
+	sSep      = lipgloss.NewStyle().Foreground(cMuted)
 	sCheck    = lipgloss.NewStyle().Bold(true).Foreground(cOK)
 )
 

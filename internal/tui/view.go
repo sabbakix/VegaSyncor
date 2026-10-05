@@ -177,6 +177,14 @@ func (m *Model) viewFooter(help string) string {
 	return msg + "\n" + rule(m.w) + "\n" + renderHelp(help, m.w)
 }
 
+// helpExtra restituisce le righe in più occupate dalla barra dei comandi quando va a capo.
+func helpExtra(help string, w int) int {
+	n := len(helpKeys)
+	h := lipgloss.Height(renderHelp(help, w))
+	helpKeys = helpKeys[:n] // il calcolo non deve registrare tasti cliccabili
+	return max(h-1, 0)
+}
+
 // renderHelp evidenzia i tasti: formato "tasto descrizione · tasto descrizione".
 func renderHelp(h string, w int) string {
 	if h == "" {
@@ -192,12 +200,22 @@ func renderHelp(h string, w int) string {
 		}
 		parts = append(parts, item)
 	}
-	out := " " + strings.Join(parts, sMuted.Render("  ·  "))
-	if lipgloss.Width(out) > w {
-		// riduce i separatori se lo spazio è poco
-		out = " " + strings.Join(parts, " ")
+	// separatore sempre visibile; se le voci non stanno in una riga si va a capo
+	sep := sSep.Render(" │ ")
+	var lines []string
+	line := ""
+	for _, p := range parts {
+		switch {
+		case line == "":
+			line = " " + p
+		case lipgloss.Width(line)+lipgloss.Width(sep)+lipgloss.Width(p) <= w:
+			line += sep + p
+		default:
+			lines = append(lines, line)
+			line = " " + p
+		}
 	}
-	return out
+	return strings.Join(append(lines, line), "\n")
 }
 
 func (m *Model) viewNoDaemon() string {
@@ -255,7 +273,7 @@ func (m *Model) viewJobs() (string, string) {
 	hdr += pad("ULTIMA", lastW) + " " + pad("PROSSIMA", nextW)
 	b.WriteString(sMuted.Render(hdr) + "\n")
 
-	listH := max(m.h-22-m.warningsHeight(), 3)
+	listH := max(m.h-22-m.warningsHeight()-helpExtra(help, m.w), 3)
 	off := listWindow(m.jobCur, 0, len(jobs), listH)
 	for i := off; i < len(jobs) && i < off+listH; i++ {
 		j := jobs[i]
@@ -304,7 +322,7 @@ func (m *Model) viewJobs() (string, string) {
 
 func (m *Model) viewJobDetail(j api.JobStatus) string {
 	w := m.w - 4
-	lbl := func(s string) string { return sMuted.Render(pad(s, 18)) }
+	lbl := func(s string) string { return sMuted.Render(pad(s, 19)) }
 	var lines []string
 
 	title := sBold.Render(j.Job.Name)
@@ -438,7 +456,7 @@ func (m *Model) viewHistory() (string, string) {
 	var b strings.Builder
 	b.WriteString(sMuted.Render("   "+pad("AVVIO", startW)+" "+pad("JOB", jobW)+" "+pad("DURATA", durW)+" "+
 		pad("ESITO", stW)+" DETTAGLI") + "\n")
-	listH := max(m.h-8-m.warningsHeight(), 3)
+	listH := max(m.h-8-m.warningsHeight()-helpExtra(help, m.w), 3)
 	m.histOffset = listWindow(m.histCur, m.histOffset, len(m.history), listH)
 	for i := m.histOffset; i < len(m.history) && i < m.histOffset+listH; i++ {
 		r := m.history[i]
@@ -464,11 +482,12 @@ func (m *Model) viewHistory() (string, string) {
 // ---------- log ----------
 
 func (m *Model) viewLog() string {
+	help := renderHelp("↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · r ricarica · esc chiudi", m.w)
+	m.logView.Height = max(m.h-3-lipgloss.Height(help), 3)
 	title := sTitle.Render(" Log: ") + sBold.Render(m.logTitle)
 	pct := fmt.Sprintf("%3.0f%%", m.logView.ScrollPercent()*100)
 	head := title + strings.Repeat(" ", max(m.w-lipgloss.Width(title)-len(pct)-1, 1)) + sMuted.Render(pct)
-	return head + "\n" + rule(m.w) + "\n" + m.logView.View() + "\n" +
-		renderHelp("↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · r ricarica · esc chiudi", m.w)
+	return head + "\n" + rule(m.w) + "\n" + m.logView.View() + "\n" + help
 }
 
 // ---------- form ----------
@@ -481,7 +500,7 @@ func (m *Model) viewForm() (string, string) {
 		top = m.jobPreview() + "\n"
 	}
 	head := " " + sTitle.Render(fm.Title) + "\n"
-	avail := m.h - 6 - formDescHeight - lipgloss.Height(head) - lipgloss.Height(top)
+	avail := m.h - 6 - formDescHeight - lipgloss.Height(head) - lipgloss.Height(top) - helpExtra(help, m.w)
 	body := fm.render(m.w-2, avail)
 	return head + top + lipgloss.NewStyle().PaddingLeft(1).Render(body), help
 }

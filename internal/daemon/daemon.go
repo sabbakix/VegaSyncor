@@ -159,6 +159,10 @@ func (d *Daemon) startLocked(j config.Job, dry bool, trigger string) (*api.Run, 
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	d.running[j.ID] = &running{run: r, cancel: cancel}
+	// registrata subito: se il servizio si interrompe di colpo (riavvio, mancanza
+	// di corrente) al riavvio risulterà "interrotta" invece di sparire
+	d.addHistory(api.Run{ID: r.ID, JobID: r.JobID, JobName: r.JobName, Trigger: r.Trigger,
+		DryRun: r.DryRun, Start: r.Start, Status: api.StatusRunning})
 	cfgSnap := *d.cfg
 	cfgSnap.Connections = append([]config.Connection(nil), d.cfg.Connections...)
 	d.wg.Add(1)
@@ -216,18 +220,42 @@ func (d *Daemon) loadHistory() {
 		d.history = nil
 		return
 	}
+	interrupted := false
 	for i := range d.history {
-		if d.history[i].Status == api.StatusRunning {
-			d.history[i].Status = api.StatusError
-			d.history[i].Message = "interrotto (servizio arrestato)"
-			d.history[i].Progress = nil
+		h := &d.history[i]
+		if h.Status != api.StatusRunning {
+			continue
+		}
+		// esecuzione in corso quando il servizio si è fermato di colpo
+		h.Status = api.StatusError
+		h.Message = "interrotta: il servizio si è arrestato durante la copia (riavvio o spegnimento)"
+		h.Progress = nil
+		h.End = h.Start
+		if st, err := os.Stat(logPath(h.ID)); err == nil && st.ModTime().After(h.Start) {
+			h.End = st.ModTime() // ultima scrittura del log ≈ momento dell'interruzione
+		}
+		interrupted = true
+	}
+	if interrupted {
+		if err := d.saveHistory(); err != nil {
+			slog.Error("salvataggio storico", "errore", err)
 		}
 	}
 }
 
 // addHistory aggiunge una voce allo storico e lo salva. Richiede d.mu.
 func (d *Daemon) addHistory(r api.Run) {
-	d.history = append(d.history, r)
+	replaced := false
+	for i := len(d.history) - 1; i >= 0; i-- {
+		if d.history[i].ID == r.ID {
+			d.history[i] = r // aggiorna la voce registrata all'avvio
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		d.history = append(d.history, r)
+	}
 	// limita il numero di voci per job ed elimina i log corrispondenti
 	var drop []api.Run
 	d.history, drop = trimHistory(d.history, historyPerJob)
@@ -278,7 +306,7 @@ func logPath(runID string) string { return filepath.Join(paths.LogDir(), runID+"
 
 func (d *Daemon) lastRun(jobID string) *api.Run {
 	for i := len(d.history) - 1; i >= 0; i-- {
-		if d.history[i].JobID == jobID {
+		if d.history[i].JobID == jobID && d.history[i].Status != api.StatusRunning {
 			r := d.history[i]
 			return &r
 		}
