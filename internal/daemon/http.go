@@ -418,7 +418,7 @@ func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 				isDir = true
 			}
 		}
-		if isDir && e.Name() != config.ArchiveDirName && e.Name() != config.LegacyArchiveDirName {
+		if isDir && e.Name() != config.ArchiveDirName {
 			resp.Dirs = append(resp.Dirs, e.Name())
 		}
 	}

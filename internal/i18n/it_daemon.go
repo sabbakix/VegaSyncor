@@ -61,10 +61,3 @@ func init() {
 		"… (log truncated, only the last lines are shown)": "… (log troncato, vengono mostrate solo le ultime righe)",
 	})
 }
-
-func init() {
-	addItalian(map[string]string{
-		"warning: renaming %s to %s: %v":   "attenzione: rinomina di %s in %s: %v",
-		"archive folder renamed: %s -> %s": "cartella di archivio rinominata: %s -> %s",
-	})
-}

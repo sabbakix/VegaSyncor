@@ -73,11 +73,6 @@ func ModeDescription(m string) string {
 // ArchiveDirName is the folder (in the destination root) holding archived versions.
 const ArchiveDirName = ".vegasyncor-archive"
 
-// LegacyArchiveDirName is the name used up to v0.2: existing folders are renamed
-// to ArchiveDirName (see syncer.MigrateArchive) and always excluded from syncs,
-// so a mirror never deletes them.
-const LegacyArchiveDirName = ".vegasyncor-archivio"
-
 type Job struct {
 	ID          string   `json:"id"`
 	Name        string   `json:"name"`

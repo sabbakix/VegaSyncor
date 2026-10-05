@@ -59,7 +59,6 @@ func BuildArgs(o Options) []string {
 		"-i", "--info=progress2", "--stats",
 		"--partial-dir=.vegasyncor-partial",
 		"--exclude=/" + config.ArchiveDirName + "/",
-		"--exclude=/" + config.LegacyArchiveDirName + "/",
 		"--exclude=.vegasyncor-partial/",
 	}
 	for _, e := range DefaultExcludes {
@@ -244,24 +243,6 @@ func IsEmptyDir(p string) (bool, error) {
 		return true, nil
 	}
 	return false, err
-}
-
-// MigrateArchive renames the archive folder of older versions
-// (LegacyArchiveDirName) to ArchiveDirName, if the new one does not exist yet.
-// It returns true if a folder was renamed.
-func MigrateArchive(dst string) (bool, error) {
-	oldDir := filepath.Join(dst, config.LegacyArchiveDirName)
-	newDir := filepath.Join(dst, config.ArchiveDirName)
-	if st, err := os.Stat(oldDir); err != nil || !st.IsDir() {
-		return false, nil
-	}
-	if _, err := os.Lstat(newDir); err == nil {
-		return false, nil // both exist: leave the old one alone (it stays excluded)
-	}
-	if err := os.Rename(oldDir, newDir); err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // PruneArchive removes the archive folders older than days days.
