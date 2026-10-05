@@ -37,6 +37,7 @@ type field struct {
 	Browse           bool
 	Visible          func(f *form) bool
 	LabelFn          func(f *form) string
+	HelpFn           func(f *form) string // descrizione che dipende dal valore scelto
 }
 
 type form struct {
@@ -93,6 +94,7 @@ func section(label string) *field { return &field{Kind: fSection, Label: label} 
 func (f *field) withHelp(h string) *field             { f.Help = h; return f }
 func (f *field) when(fn func(*form) bool) *field      { f.Visible = fn; return f }
 func (f *field) labeled(fn func(*form) string) *field { f.LabelFn = fn; return f }
+func (f *field) helpFn(fn func(*form) string) *field  { f.HelpFn = fn; return f }
 func (f *field) browsable() *field                    { f.Browse = true; return f }
 func (f *field) focusable() bool                      { return f.Kind != fSection }
 func (f *field) value() string                        { return strings.TrimSpace(f.Input.Value()) }
@@ -239,9 +241,6 @@ func (fm *form) render(width, height int) string {
 		}
 		valW := width - labelWidth - 3
 		lines = append(lines, marker+label+" "+fm.renderValue(f, focused, valW))
-		if focused && f.Help != "" {
-			lines = append(lines, strings.Repeat(" ", labelWidth+3)+sMuted.Render(trunc(f.Help, valW)))
-		}
 	}
 	if height > 0 && len(lines) > height {
 		if focusLine < fm.offset {
@@ -274,11 +273,7 @@ func (fm *form) renderValue(f *field, focused bool, w int) string {
 		}
 		return lbl
 	case fBool:
-		box := checkbox(f.Bool)
-		if focused {
-			return box + sMuted.Render("  spazio per cambiare")
-		}
-		return box
+		return checkbox(f.Bool)
 	case fDays:
 		var parts []string
 		for idx, d := range config.WeekOrder {
@@ -292,11 +287,7 @@ func (fm *form) renderValue(f *field, focused bool, w int) string {
 			}
 			parts = append(parts, s)
 		}
-		out := strings.Join(parts, "  ")
-		if focused {
-			out += sMuted.Render("  ←→ spazio · w=lun-ven · a=tutti")
-		}
-		return out
+		return strings.Join(parts, "  ")
 	}
 	return ""
 }
@@ -308,4 +299,33 @@ func checkbox(on bool) string {
 		return "[" + sCheck.Render("x") + "]"
 	}
 	return "[ ]"
+}
+
+// description restituisce il testo d'aiuto del campo attivo, mostrato nella
+// barra fissa in fondo al form (così i campi non si spostano).
+func (fm *form) description() (label, text string) {
+	if fm.Cur < 0 || fm.Cur >= len(fm.Fields) {
+		return "", ""
+	}
+	f := fm.Fields[fm.Cur]
+	label = f.Label
+	if f.LabelFn != nil {
+		label = f.LabelFn(fm)
+	}
+	var hints []string
+	if f.HelpFn != nil {
+		hints = append(hints, f.HelpFn(fm))
+	}
+	if f.Help != "" {
+		hints = append(hints, f.Help)
+	}
+	switch f.Kind {
+	case fChoice:
+		hints = append(hints, "← → per cambiare scelta")
+	case fBool:
+		hints = append(hints, "spazio per attivare o disattivare")
+	case fDays:
+		hints = append(hints, "← → per spostarsi, spazio per selezionare · w = lun-ven · a = tutti/nessuno")
+	}
+	return label, strings.Join(hints, " · ")
 }

@@ -39,7 +39,12 @@ func (m *Model) View() string {
 	header := m.viewHeader()
 	footer := m.viewFooter(help)
 	bodyH := m.h - lipgloss.Height(header) - lipgloss.Height(footer)
-	body = fitHeight(body, bodyH)
+	if m.form != nil && !m.logOpen {
+		// barra descrizione ancorata in fondo, sopra i tasti
+		body = fitHeight(body, bodyH-formDescHeight) + "\n" + m.viewFormDescription()
+	} else {
+		body = fitHeight(body, bodyH)
+	}
 
 	screen := header + "\n" + body + "\n" + footer
 	if ov := m.overlay(); ov != "" {
@@ -464,20 +469,48 @@ func (m *Model) viewForm() (string, string) {
 	if m.formKind == "job" {
 		top = m.jobPreview() + "\n"
 	}
-	errLine := ""
-	if fm.Err != "" {
+	head := " " + sTitle.Render(fm.Title) + "\n"
+	avail := m.h - 6 - formDescHeight - lipgloss.Height(head) - lipgloss.Height(top)
+	body := fm.render(m.w-2, avail)
+	return head + top + lipgloss.NewStyle().PaddingLeft(1).Render(body), help
+}
+
+// formDescHeight è l'altezza fissa della barra descrizione in fondo al form.
+const formDescHeight = 3
+
+// viewFormDescription è la barra fissa in fondo al form: descrive il campo attivo
+// oppure mostra l'errore di validazione. Ha sempre la stessa altezza.
+func (m *Model) viewFormDescription() string {
+	fm := m.form
+	w := m.w - 2
+	var text string
+	switch {
+	case fm.Err != "":
 		st := sErr
 		if strings.HasSuffix(fm.Err, "…") {
 			st = sMuted
 		}
-		errLine = "\n" + st.Render(" "+fm.Err)
-	} else if m.saving {
-		errLine = "\n" + sMuted.Render(" salvataggio…")
+		text = st.Render(fm.Err)
+	case m.saving:
+		text = sMuted.Render("salvataggio…")
+	default:
+		label, desc := fm.description()
+		if desc == "" {
+			desc = "—"
+		}
+		text = sBold.Render(label+": ") + sMuted.Render(desc)
 	}
-	head := " " + sTitle.Render(fm.Title) + "\n"
-	avail := m.h - 6 - lipgloss.Height(head) - lipgloss.Height(top) - lipgloss.Height(errLine)
-	body := fm.render(m.w-2, avail)
-	return head + top + lipgloss.NewStyle().PaddingLeft(1).Render(body) + errLine, help
+	lines := strings.Split(lipgloss.NewStyle().Width(w).Render(text), "\n")
+	if len(lines) > formDescHeight-1 {
+		lines = lines[:formDescHeight-1]
+	}
+	for len(lines) < formDescHeight-1 {
+		lines = append(lines, "")
+	}
+	for i := range lines {
+		lines[i] = " " + lines[i]
+	}
+	return rule(m.w) + "\n" + strings.Join(lines, "\n")
 }
 
 // jobPreview mostra in modo visivo sorgente → destinazione mentre si compila il form.
