@@ -16,7 +16,7 @@ import (
 // View draws the screen; zone.Scan records the positions of the clickable parts.
 func (m *Model) View() string {
 	helpKeys = helpKeys[:0]
-	return zone.Scan(m.render())
+	return paintBackground(zone.Scan(m.render()), m.w, m.h)
 }
 
 func (m *Model) render() string {

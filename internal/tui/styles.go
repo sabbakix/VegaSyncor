@@ -20,27 +20,36 @@ var (
 	cSelBg   = lipgloss.AdaptiveColor{Light: "#DBEAFE", Dark: "#1E3A5F"}
 	cText    = lipgloss.AdaptiveColor{Light: "#111827", Dark: "#E5E7EB"}
 	cBadgeBg = lipgloss.AdaptiveColor{Light: "#FEF3C7", Dark: "#4A3A10"}
-
-	sTitle    = lipgloss.NewStyle().Bold(true).Foreground(cAccent)
-	sMuted    = lipgloss.NewStyle().Foreground(cMuted)
-	sBold     = lipgloss.NewStyle().Bold(true)
-	sOK       = lipgloss.NewStyle().Foreground(cOK)
-	sWarn     = lipgloss.NewStyle().Foreground(cWarn)
-	sErr      = lipgloss.NewStyle().Foreground(cErr)
-	sRun      = lipgloss.NewStyle().Foreground(cRun)
-	sSel      = lipgloss.NewStyle().Background(cSelBg).Foreground(cText)
-	sSection  = lipgloss.NewStyle().Bold(true).Foreground(cAccent)
-	sKey      = lipgloss.NewStyle().Bold(true).Foreground(cAccent)
-	sROBadge  = lipgloss.NewStyle().Foreground(cWarn).Background(cBadgeBg).Bold(true).Padding(0, 1)
-	sTabOn    = lipgloss.NewStyle().Bold(true).Foreground(cText).Background(cSelBg).Padding(0, 1)
-	sTabOff   = lipgloss.NewStyle().Foreground(cMuted).Padding(0, 1)
-	sBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cFaint).Padding(0, 1)
-	sFocusBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 1)
-	sRule     = lipgloss.NewStyle().Foreground(cFaint)
-	sClock    = lipgloss.NewStyle().Bold(true).Foreground(cText)
-	sSep      = lipgloss.NewStyle().Foreground(cMuted)
-	sCheck    = lipgloss.NewStyle().Bold(true).Foreground(cOK)
 )
+
+// styles, built from the palette by rebuildStyles (again after the theme changes it)
+var (
+	sTitle, sMuted, sBold, sOK, sWarn, sErr, sRun, sSel, sSection, sKey, sROBadge, sTabOn, sTabOff, sBox, sFocusBox, sRule, sClock, sSep, sCheck lipgloss.Style
+)
+
+func init() { rebuildStyles() }
+
+func rebuildStyles() {
+	sTitle = lipgloss.NewStyle().Bold(true).Foreground(cAccent)
+	sMuted = lipgloss.NewStyle().Foreground(cMuted)
+	sBold = lipgloss.NewStyle().Bold(true)
+	sOK = lipgloss.NewStyle().Foreground(cOK)
+	sWarn = lipgloss.NewStyle().Foreground(cWarn)
+	sErr = lipgloss.NewStyle().Foreground(cErr)
+	sRun = lipgloss.NewStyle().Foreground(cRun)
+	sSel = lipgloss.NewStyle().Background(cSelBg).Foreground(cText)
+	sSection = lipgloss.NewStyle().Bold(true).Foreground(cAccent)
+	sKey = lipgloss.NewStyle().Bold(true).Foreground(cAccent)
+	sROBadge = lipgloss.NewStyle().Foreground(cWarn).Background(cBadgeBg).Bold(true).Padding(0, 1)
+	sTabOn = lipgloss.NewStyle().Bold(true).Foreground(cText).Background(cSelBg).Padding(0, 1)
+	sTabOff = lipgloss.NewStyle().Foreground(cMuted).Padding(0, 1)
+	sBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cFaint).Padding(0, 1)
+	sFocusBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 1)
+	sRule = lipgloss.NewStyle().Foreground(cFaint)
+	sClock = lipgloss.NewStyle().Bold(true).Foreground(cText)
+	sSep = lipgloss.NewStyle().Foreground(cMuted)
+	sCheck = lipgloss.NewStyle().Bold(true).Foreground(cOK)
+}
 
 func trunc(s string, w int) string {
 	if w <= 0 {

@@ -135,6 +135,11 @@ A click selects a row, a double click opens it.
 With the mouse enabled, hold **Shift** while dragging to select and copy text in the terminal.
 To use the TUI without the mouse: `vegasyncor --no-mouse` (or `VEGASYNCOR_NO_MOUSE=1`).
 
+### Theme
+
+The TUI paints its own dark blue-grey background, so it looks the same whatever the terminal colours
+are. To keep the terminal's own background instead: `VEGASYNCOR_THEME=terminal vegasyncor`.
+
 ### Main keys
 
 | Tab | Keys |

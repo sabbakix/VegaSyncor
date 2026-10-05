@@ -119,6 +119,7 @@ func Run(c *api.Client, version string, mouse bool) error {
 	zone.NewGlobal()
 	defer zone.Close()
 	zone.SetEnabled(mouse)
+	setupTheme()
 	m := &Model{client: c, version: version}
 	opts := []tea.ProgramOption{tea.WithAltScreen()}
 	if mouse {
