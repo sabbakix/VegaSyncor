@@ -16,6 +16,7 @@ import (
 	"vegasyncor/internal/api"
 	"vegasyncor/internal/config"
 	"vegasyncor/internal/daemon"
+	"vegasyncor/internal/firewall"
 	"vegasyncor/internal/i18n"
 	"vegasyncor/internal/mount"
 	"vegasyncor/internal/paths"
@@ -34,6 +35,7 @@ Usage:
   vegasyncor check           checks that the system can mount SMB shares
   vegasyncor run <job>       runs a job now (name or ID)
   vegasyncor dry-run <job>   simulates a job without changing anything
+  vegasyncor firewall off    disables the firewall (emergency, e.g. from the console)
   vegasyncor version         shows the version
 
 The language follows the service setting; VEGASYNCOR_LANG=en|it overrides it.
@@ -61,6 +63,12 @@ func main() {
 			err = errors.New(T("specify the job"))
 		} else {
 			err = runJob(os.Args[2], cmd == "dry-run")
+		}
+	case "firewall":
+		if len(os.Args) < 3 || os.Args[2] != "off" {
+			err = errors.New(T("usage: vegasyncor firewall off"))
+		} else {
+			err = firewallOff()
 		}
 	case "version", "--version", "-v":
 		fmt.Println("vegasyncor", version)
@@ -273,4 +281,32 @@ func hasArg(a string) bool {
 		}
 	}
 	return false
+}
+
+// firewallOff disables the firewall: through the service if it is running,
+// otherwise by editing the configuration and removing the nftables table directly.
+func firewallOff() error {
+	c := api.NewClient(paths.Socket())
+	if st, err := c.Firewall(); err == nil {
+		next := st.Settings
+		next.Enabled = false
+		if _, err := c.SetFirewall(next); err != nil {
+			return err
+		}
+		fmt.Println(T("Firewall disabled."))
+		return nil
+	}
+	cfg, err := config.Load(paths.ConfigFile())
+	if err != nil {
+		return err
+	}
+	cfg.Firewall.Enabled = false
+	if err := cfg.Save(paths.ConfigFile()); err != nil {
+		return err
+	}
+	if err := (firewall.NFT{}).Apply(firewall.DisableScript()); err != nil {
+		return err
+	}
+	fmt.Println(T("Firewall disabled (the service is not running: configuration updated directly)."))
+	return nil
 }

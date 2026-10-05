@@ -107,6 +107,13 @@ func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
 	switch {
 	case m.info != nil || m.confirm != nil || m.logOpen:
 		return nil
+	}
+	if _, pending := m.fwPendingLeft(); pending && m.form == nil {
+		return nil // the firewall confirmation dialog is open
+	}
+	switch {
+	case false:
+		return nil
 	case m.picker != nil:
 		for i := range m.picker.items {
 			id := fmt.Sprintf("pick:%d", i)
@@ -166,6 +173,16 @@ func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
 				m.connCur = i
 				if m.isDouble(id) {
 					return m.connsKey("enter")
+				}
+				return nil
+			}
+		}
+	case tabFirewall:
+		for i := range m.fwItems() {
+			if id := fmt.Sprintf("fw:%d", i); hit(id, msg) {
+				m.fwCur = i
+				if m.isDouble(id) {
+					return m.firewallKey("enter")
 				}
 				return nil
 			}

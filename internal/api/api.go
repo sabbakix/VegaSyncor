@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"vegasyncor/internal/config"
+	"vegasyncor/internal/firewall"
 	"vegasyncor/internal/syncer"
 )
 
@@ -105,6 +106,25 @@ type Status struct {
 	ZoneName   string    `json:"zone_name,omitempty"` // e.g. Europe/Rome
 	// Language of the service messages ("en", "it").
 	Language string `json:"language,omitempty"`
+}
+
+// FirewallStatus is the state of the firewall managed by VegaSyncor, with the
+// open ports and connections of the server.
+type FirewallStatus struct {
+	Available bool            `json:"available"`       // nftables installed
+	Error     string          `json:"error,omitempty"` // last error applying the rules
+	Active    bool            `json:"active"`          // the VegaSyncor table is loaded
+	Settings  config.Firewall `json:"settings"`        // confirmed settings (or pending ones)
+	Rules     []firewall.Rule `json:"rules"`           // rules as applied, with counters
+	// PendingUntil: the rules were changed and are reverted at this time
+	// unless confirmed (zero if nothing is pending).
+	PendingUntil time.Time         `json:"pending_until,omitempty"`
+	Listening    []firewall.Socket `json:"listening"`
+	Connections  []firewall.Socket `json:"connections"`
+	// Unresolved lists connection hosts that cannot be resolved: SMB to them is blocked.
+	Unresolved []string `json:"unresolved,omitempty"`
+	// HostNames labels remote addresses with the connection that uses them.
+	HostNames map[string]string `json:"host_names,omitempty"`
 }
 
 // Settings are the global settings that can be changed from the TUI.
@@ -205,6 +225,22 @@ func (c *Client) Status() (*Status, error) {
 	var s Status
 	return &s, c.do("GET", "/api/status", nil, &s)
 }
+
+func (c *Client) Firewall() (*FirewallStatus, error) {
+	var out FirewallStatus
+	return &out, c.do("GET", "/api/firewall", nil, &out)
+}
+
+// SetFirewall applies new firewall settings. When the firewall stays enabled the
+// change is pending: it must be confirmed with ConfirmFirewall, or it is reverted.
+func (c *Client) SetFirewall(f config.Firewall) (*FirewallStatus, error) {
+	var out FirewallStatus
+	return &out, c.do("PUT", "/api/firewall", f, &out)
+}
+
+func (c *Client) ConfirmFirewall() error { return c.do("POST", "/api/firewall/confirm", nil, nil) }
+
+func (c *Client) RevertFirewall() error { return c.do("POST", "/api/firewall/revert", nil, nil) }
 
 func (c *Client) SetLanguage(code string) error {
 	return c.do("POST", "/api/settings", Settings{Language: code}, nil)

@@ -34,6 +34,9 @@ the clock (or the `L` key).
 - Incremental copy with `rsync` (differences only), bandwidth limit, exclusions, history and
   detailed log of every run.
 - **Mouse support** in the TUI (tabs, commands, lists, form fields), alongside the keyboard.
+- **Firewall** for the backup server: a *Firewall* tab lists open ports and active connections and
+  applies a lockdown (incoming only SSH from the admin hosts, outgoing only SMB to the backed-up hosts)
+  with automatic rollback if a change is not confirmed.
 
 ## Screenshots
 
@@ -57,6 +60,11 @@ the read-only indicator; the bar at the bottom describes the active field.
 **History**: outcome of every run, with access to the detailed log.
 
 ![Run history with outcomes and details](docs/screenshots/06-history.png)
+
+**Firewall**: open ports with their process and whether they can be reached, active connections,
+and the rules applied, with packet counters.
+
+![Firewall tab with listening ports, connections and rules](docs/screenshots/07-firewall.png)
 
 ## Installation
 
@@ -94,6 +102,7 @@ passwords can no longer be decrypted (they would have to be entered again).
 sudo vegasyncor                      # opens the TUI
 sudo vegasyncor status               # short status of the jobs
 sudo vegasyncor check                # checks that the system can mount SMB shares
+sudo vegasyncor firewall off         # disables the firewall (emergency)
 sudo vegasyncor run "Accounting"     # runs a job now and shows its progress
 sudo vegasyncor dry-run "Accounting" # dry run
 journalctl -u vegasyncor -f          # service log
@@ -149,8 +158,49 @@ are. To keep the terminal's own background instead: `VEGASYNCOR_THEME=terminal v
 | Syncs | `n` new · `Enter` edit · `r` run now · `s` dry run · `x` stop · `p` pause/resume · `l` log · `d` delete |
 | Connections | `n` new · `Enter` edit · `t` test · `d` delete |
 | History | `Enter` opens the run log · `r` refresh |
+| Firewall | `e` settings / lockdown · `a` add rule · `Enter` edit rule or add one from a port/connection · `d` delete rule · `r` refresh |
 | Form | `↑↓`/`Tab` field · `←→` choice · `Space` toggle · `Enter` browse · `Ctrl+S` save · `Esc` cancel |
-| Everywhere | `1` `2` `3` / `Tab` switch tab · `L` language · `q` quit |
+| Everywhere | `1` `2` `3` `4` / `Tab` switch tab · `L` language · `q` quit |
+
+## Firewall
+
+A backup server should accept as little traffic as possible. The **4 Firewall** tab shows:
+
+- **listening ports**, with the process and whether they can be reached from the network
+  (*open to the network*, *allowed: …*, *blocked*, *local only*);
+- **active connections**, incoming and outgoing, with the remote host labelled with the name of the
+  VegaSyncor connection that uses it (SMB mounts appear as *kernel*);
+- the **rules** applied, with packet counters (including what has been blocked).
+
+Press `e` to enable the **lockdown**:
+
+- incoming: only **SSH from the admin hosts** (IP addresses or networks; empty = any host) and
+  replies to connections started by the server; optionally ping;
+- outgoing: **SMB only to the hosts of the connections**, plus DNS, NTP, DHCP and, optionally, web
+  (HTTP/HTTPS) for updates;
+- everything else is blocked and logged (`journalctl -k | grep vegasyncor`).
+
+On a port or a connection, `enter` (or `a`) creates an allow/block rule pre-filled from it; your rules
+are marked with `*`, `enter` edits them and `d` deletes them. Block rules are checked before the allow
+rules, so they win.
+
+**Safety**
+- Every change is applied immediately but **saved only when you confirm it**: if you do not confirm
+  within 60 seconds (for example because the new rules cut your SSH session), the previous rules are
+  restored automatically. The form warns you if the address of your SSH session is not among the
+  admin hosts.
+- VegaSyncor uses **its own nftables table** (`inet vegasyncor`) and never touches other rules;
+  removing the table restores the system as it was. The rules stay active even if the service stops,
+  and are loaded again when it starts.
+- Connection hosts given as names are resolved to addresses (and re-resolved every 10 minutes). If a
+  name cannot be resolved, SMB to that host is blocked and a warning is shown: prefer IP addresses in
+  the connections when the firewall is on.
+- **Locked out?** From the server console (for Proxmox: `pct enter <ID>`) run
+  `vegasyncor firewall off`; it works also when the service is stopped. Uninstalling the package
+  removes the rules too.
+
+Requires `nftables` (installed by the installer; `vegasyncor check` reports it). In LXC containers
+the container must allow nftables (privileged containers usually do).
 
 ## Containers (LXC, Proxmox, Docker)
 
@@ -244,6 +294,9 @@ export VEGASYNCOR_DEV=1 VEGASYNCOR_CONFIG_DIR=/tmp/vs/etc VEGASYNCOR_STATE_DIR=/
 SMB shares are simulated with local folders: `\\HOST\SHARE` maps to
 `$VEGASYNCOR_DEV_SMB_ROOT/HOST/SHARE` (e.g. `mkdir -p /tmp/vs/smb/OFFICE-PC/Documents`).
 
+The firewall rules can be loaded into a real kernel in a throw-away user+network namespace (no
+effect on the machine): `VEGASYNCOR_TEST_NFT=nft go test ./internal/firewall`.
+
 ### Translations
 
 Texts are written in English in the code and wrapped with `T("...")` / `Tf("...", args)`.
@@ -265,3 +318,4 @@ its table.
 | `internal/secrets` | AES-256-GCM encryption of passwords |
 | `internal/mount` | CIFS mounts / read-only binds, share listing, environment checks |
 | `internal/syncer` | rsync execution, progress, archive |
+| `internal/firewall` | nftables rules (lockdown preset), counters, open ports and connections (`ss`) |

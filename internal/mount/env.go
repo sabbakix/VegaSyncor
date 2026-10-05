@@ -148,6 +148,11 @@ func Diagnose() []Check {
 			out = append(out, Check{CheckOK, t.cmd, ""})
 		}
 	}
+	if _, err := exec.LookPath("nft"); err != nil {
+		out = append(out, Check{CheckWarn, "nft", T("not installed: the firewall cannot be used (apt install nftables)")})
+	} else {
+		out = append(out, Check{CheckOK, "nft", ""})
+	}
 	if _, err := exec.LookPath("smbclient"); err != nil {
 		out = append(out, Check{CheckWarn, "smbclient", T("not installed: the list of shares will not be available (apt install smbclient)")})
 	} else {

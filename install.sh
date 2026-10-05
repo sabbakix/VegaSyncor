@@ -14,12 +14,12 @@ if [ ! -x "$BIN" ]; then
     exit 1
 fi
 
-echo "→ installing dependencies (rsync, cifs-utils, smbclient)"
+echo "→ installing dependencies (rsync, cifs-utils, smbclient, nftables)"
 if command -v apt-get >/dev/null; then
     apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rsync cifs-utils smbclient
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rsync cifs-utils smbclient nftables
 else
-    echo "  apt-get not available: install rsync, cifs-utils and smbclient manually"
+    echo "  apt-get not available: install rsync, cifs-utils, smbclient and nftables manually"
 fi
 
 echo "→ copying the program to /usr/bin/vegasyncor"

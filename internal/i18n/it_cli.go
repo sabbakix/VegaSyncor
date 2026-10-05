@@ -12,6 +12,7 @@ Usage:
   vegasyncor check           checks that the system can mount SMB shares
   vegasyncor run <job>       runs a job now (name or ID)
   vegasyncor dry-run <job>   simulates a job without changing anything
+  vegasyncor firewall off    disables the firewall (emergency, e.g. from the console)
   vegasyncor version         shows the version
 
 The language follows the service setting; VEGASYNCOR_LANG=en|it overrides it.
@@ -25,6 +26,7 @@ Uso:
   vegasyncor check           verifica che il sistema possa montare le condivisioni SMB
   vegasyncor run <job>       avvia subito un job (nome o ID)
   vegasyncor dry-run <job>   simula un job senza modificare nulla
+  vegasyncor firewall off    disattiva il firewall (emergenza, es. dalla console)
   vegasyncor version         mostra la versione
 
 La lingua segue l'impostazione del servizio; VEGASYNCOR_LANG=en|it la sostituisce.

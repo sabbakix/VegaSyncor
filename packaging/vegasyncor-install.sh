@@ -42,10 +42,10 @@ curl -fsSL -o "$TMP/SHA256SUMS" "$BASE/SHA256SUMS"
 echo "→ verifying checksum"
 (cd "$TMP" && grep " $DEB\$" SHA256SUMS | sha256sum -c -)
 
-echo "→ installing (with dependencies rsync, cifs-utils, smbclient)"
+echo "→ installing (with dependencies rsync, cifs-utils, smbclient, nftables)"
 chmod 644 "$TMP/$DEB"
 apt-get update -qq
-DEBIAN_FRONTEND=noninteractive apt-get install -y "$TMP/$DEB" smbclient
+DEBIAN_FRONTEND=noninteractive apt-get install -y "$TMP/$DEB" smbclient nftables
 
 echo
 systemctl --no-pager --lines=0 status vegasyncor || true

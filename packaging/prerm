@@ -2,6 +2,8 @@
 set -e
 if [ -d /run/systemd/system ] && [ "$1" = "remove" ]; then
     systemctl stop vegasyncor.service || true
+    # remove the VegaSyncor firewall table, so the server is not left locked down
+    command -v nft >/dev/null 2>&1 && nft delete table inet vegasyncor 2>/dev/null || true
     systemctl disable vegasyncor.service >/dev/null 2>&1 || true
 fi
 exit 0

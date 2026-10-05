@@ -94,7 +94,9 @@ type Job struct {
 type Config struct {
 	MaxParallel int `json:"max_parallel"`
 	// Language of the interface and of the service messages ("en", "it").
-	Language    string       `json:"language,omitempty"`
+	Language string `json:"language,omitempty"`
+	// Firewall managed by VegaSyncor (nftables).
+	Firewall    Firewall     `json:"firewall"`
 	Connections []Connection `json:"connections"`
 	Jobs        []Job        `json:"jobs"`
 }

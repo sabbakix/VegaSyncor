@@ -44,6 +44,9 @@ type Daemon struct {
 	sem     chan struct{}
 	started time.Time
 	wg      sync.WaitGroup
+
+	fw            *fwState
+	fwLastRefresh time.Time
 }
 
 func New(version string) (*Daemon, error) {
@@ -64,6 +67,7 @@ func New(version string) (*Daemon, error) {
 		next:    map[string]time.Time{},
 		sem:     make(chan struct{}, cfg.MaxParallel),
 		started: time.Now(),
+		fw:      newFwState(),
 	}
 	for _, w := range d.warnings() {
 		slog.Warn(w)
@@ -93,6 +97,14 @@ func (d *Daemon) warnings() []string {
 	if err := mount.EnsureTools(); err != nil {
 		out = append(out, err.Error())
 	}
+	if w := d.unresolvedWarning(); w != "" {
+		out = append(out, w)
+	}
+	d.fw.mu.Lock()
+	if d.fw.lastErr != "" {
+		out = append(out, Tf("firewall: the rules could not be applied: %s", d.fw.lastErr))
+	}
+	d.fw.mu.Unlock()
 	d.mu.Lock()
 	for _, p := range d.cfg.DestConflicts() {
 		out = append(out, Tf("jobs %q and %q write to the same destination: a mirror deletes the other job's files", p[0].Name, p[1].Name))
@@ -106,6 +118,8 @@ func (d *Daemon) Run(ctx context.Context) error {
 	if stale := mount.CleanupStale(); len(stale) > 0 {
 		slog.Warn("unmounted leftover mount points", "points", stale)
 	}
+	d.fwStartup() // protect the server as soon as possible, before serving the API
+	d.fwLastRefresh = time.Now()
 	srv, err := d.serveAPI()
 	if err != nil {
 		return err
@@ -132,6 +146,10 @@ func (d *Daemon) Run(ctx context.Context) error {
 			return nil
 		case now := <-t.C:
 			d.tick(now)
+			if now.Sub(d.fwLastRefresh) > hostResolveEvery {
+				d.fwLastRefresh = now
+				go d.fwRefresh(true)
+			}
 		}
 	}
 }

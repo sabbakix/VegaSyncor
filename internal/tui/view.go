@@ -41,6 +41,8 @@ func (m *Model) render() string {
 			body, help = m.viewConns()
 		case tabHistory:
 			body, help = m.viewHistory()
+		case tabFirewall:
+			body, help = m.viewFirewall()
 		}
 	}
 
@@ -590,6 +592,9 @@ func (m *Model) jobPreview() string {
 
 func (m *Model) overlay() string {
 	modalW := min(max(m.w-10, 40), 90)
+	if _, pending := m.fwPendingLeft(); pending && m.form == nil {
+		return m.viewFwConfirm(modalW)
+	}
 	switch {
 	case m.info != nil:
 		return sFocusBox.Width(modalW).Render(sTitle.Render(m.info.title) + "\n\n" + m.info.body +

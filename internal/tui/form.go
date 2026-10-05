@@ -48,6 +48,7 @@ type form struct {
 	Fields []*field
 	Cur    int
 	Err    string
+	warned bool // a warning was shown: the next save goes ahead
 	offset int
 }
 

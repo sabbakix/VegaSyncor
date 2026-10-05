@@ -21,11 +21,14 @@ const (
 	tabJobs tab = iota
 	tabConns
 	tabHistory
+	tabFirewall
 )
 
-const tabCount = 3
+const tabCount = 4
 
-func tabNames() []string { return []string{T("1 Syncs"), T("2 Connections"), T("3 History")} }
+func tabNames() []string {
+	return []string{T("1 Syncs"), T("2 Connections"), T("3 History"), T("4 Firewall")}
+}
 
 type confirmBox struct {
 	text   string
@@ -75,6 +78,12 @@ type Model struct {
 	lastClick string // to detect double clicks
 
 	langPending bool // language change sent to the service, not yet confirmed
+
+	fw          *api.FirewallStatus
+	fwErr       error
+	fwPolling   bool
+	fwCur       int
+	fwOffset    int
 	lastClickAt time.Time
 }
 
@@ -243,6 +252,9 @@ func clamp(v, n int) int {
 // ---------- update ----------
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if cmd, ok := m.updateFirewall(msg); ok {
+		return m, cmd
+	}
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
@@ -256,6 +268,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.tab == tabHistory && time.Time(msg).Second()%5 == 0 {
 			cmds = append(cmds, m.fetchHistory())
+		}
+		// firewall: every 3 s on its tab, every second while a change waits for confirmation
+		_, pending := m.fwPendingLeft()
+		if !m.fwPolling && (pending || (m.tab == tabFirewall && time.Time(msg).Second()%3 == 0)) {
+			cmds = append(cmds, m.fetchFirewall())
 		}
 		if m.flash != "" && time.Since(m.flashAt) > 6*time.Second {
 			m.flash = ""
@@ -400,6 +417,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 	key := k.String()
+	if cmd, ok := m.fwConfirmKey(key); ok {
+		return cmd
+	}
 	switch {
 	case m.info != nil:
 		if key == "esc" || key == "enter" || key == "q" {
@@ -455,20 +475,17 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 	case "3", "h":
 		m.tab = tabHistory
 		return m.fetchHistory()
+	case "4":
+		m.tab = tabFirewall
+		return m.fetchFirewall()
 	case "L":
 		return m.cycleLanguage()
 	case "tab":
 		m.tab = (m.tab + 1) % tabCount
-		if m.tab == tabHistory {
-			return m.fetchHistory()
-		}
-		return nil
+		return m.enterTab()
 	case "shift+tab":
 		m.tab = (m.tab + tabCount - 1) % tabCount
-		if m.tab == tabHistory {
-			return m.fetchHistory()
-		}
-		return nil
+		return m.enterTab()
 	}
 	if m.st == nil {
 		return nil
@@ -480,6 +497,8 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 		return m.connsKey(key)
 	case tabHistory:
 		return m.historyKey(key)
+	case tabFirewall:
+		return m.firewallKey(key)
 	}
 	return nil
 }
@@ -629,6 +648,8 @@ func (m *Model) formKey(k tea.KeyMsg) tea.Cmd {
 func (m *Model) saveForm() tea.Cmd {
 	fm, c := m.form, m.client
 	switch m.formKind {
+	case "fwsettings", "fwrule":
+		return m.saveFirewallForm()
 	case "job":
 		j, err := jobFromForm(fm, m.formID)
 		if err != nil {
@@ -868,6 +889,17 @@ func isRsyncStat(l string) bool {
 		}
 	}
 	return false
+}
+
+// enterTab loads the data of the tab just selected.
+func (m *Model) enterTab() tea.Cmd {
+	switch m.tab {
+	case tabHistory:
+		return m.fetchHistory()
+	case tabFirewall:
+		return m.fetchFirewall()
+	}
+	return nil
 }
 
 // isLogError / isLogWarning recognise error and warning lines in a run log,

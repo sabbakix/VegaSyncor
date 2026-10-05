@@ -49,6 +49,10 @@ func (d *Daemon) serveAPI() (*http.Server, error) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) { reply(w, d.status()) })
 	mux.HandleFunc("POST /api/settings", d.handleSettings)
+	mux.HandleFunc("GET /api/firewall", d.handleFirewallGet)
+	mux.HandleFunc("PUT /api/firewall", d.handleFirewallSet)
+	mux.HandleFunc("POST /api/firewall/confirm", d.handleFirewallConfirm)
+	mux.HandleFunc("POST /api/firewall/revert", d.handleFirewallRevert)
 
 	mux.HandleFunc("POST /api/jobs", d.handleSaveJob)
 	mux.HandleFunc("PUT /api/jobs/{id}", d.handleSaveJob)
@@ -312,6 +316,7 @@ func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("connection saved", "name", c.Name, "host", c.Host, "user", c.Username)
+	go d.fwRefresh(true) // the outgoing SMB rule follows the connection hosts
 	reply(w, viewConn(c))
 }
 
@@ -337,6 +342,7 @@ func (d *Daemon) handleDeleteConn(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err)
 		return
 	}
+	go d.fwRefresh(true)
 	reply(w, map[string]bool{"ok": true})
 }
 
