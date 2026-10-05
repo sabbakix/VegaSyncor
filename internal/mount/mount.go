@@ -1,5 +1,5 @@
-// Package mount gestisce il montaggio delle condivisioni SMB/CIFS
-// e i bind mount in sola lettura delle sorgenti locali.
+// Package mount handles mounting SMB/CIFS shares and read-only
+// bind mounts of local sources.
 package mount
 
 import (
@@ -19,7 +19,7 @@ import (
 	"vegasyncor/internal/paths"
 )
 
-// SMBTarget sono i dati necessari per montare una condivisione.
+// SMBTarget holds what is needed to mount a share.
 type SMBTarget struct {
 	Host       string
 	Share      string
@@ -29,16 +29,16 @@ type SMBTarget struct {
 	SMBVersion string
 }
 
-// Mount rappresenta un punto di montaggio attivo.
+// Mount is an active mount point.
 type Mount struct {
 	Point string
 }
 
-// writeCredentials crea un file credenziali temporaneo (0600) in RuntimeDir,
-// così la password non compare mai nella riga di comando dei processi.
+// writeCredentials creates a temporary credentials file (0600) in RuntimeDir,
+// so the password never appears on a process command line.
 func writeCredentials(t SMBTarget) (string, error) {
 	if strings.ContainsAny(t.Password, "\n\r") {
-		return "", errors.New("la password non può contenere a capo")
+		return "", errors.New(T("the password cannot contain line breaks"))
 	}
 	dir := paths.RuntimeDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -81,7 +81,7 @@ func run(ctx context.Context, name string, args ...string) error {
 	return nil
 }
 
-// cleanOutput riduce l'output di mount a una riga, senza i rimandi al manuale.
+// cleanOutput reduces the mount output to one line, without the manual references.
 func cleanOutput(out string) string {
 	var parts []string
 	for _, l := range strings.Split(out, "\n") {
@@ -106,8 +106,8 @@ func uptime() float64 {
 
 var dmesgRe = regexp.MustCompile(`^\[\s*([0-9]+\.[0-9]+)\]\s*(.*)$`)
 
-// kernelCIFSMessages restituisce i messaggi CIFS del kernel registrati dopo since
-// (secondi dall'avvio): spiegano il vero motivo di un montaggio fallito.
+// kernelCIFSMessages returns the kernel CIFS messages logged after since
+// (seconds since boot): they explain the real reason of a failed mount.
 func kernelCIFSMessages(since float64) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -139,20 +139,19 @@ func parseCIFSMessages(out string, since float64) string {
 	return strings.Join(msgs, "; ")
 }
 
-// explainMountError aggiunge un suggerimento in italiano agli errori più comuni di mount.cifs.
+// explainMountError adds a hint to the most common mount.cifs errors.
 func explainMountError(msg string) string {
 	hints := map[string]string{
-		"Permission denied":         "utente o password errati, oppure permessi insufficienti sulla condivisione",
+		"Permission denied":         T("wrong user or password, or insufficient permissions on the share"),
 		"Operation not permitted":   epermHint(),
-		"No such file or directory": "condivisione inesistente o percorso errato",
-		"Host is down":              "server non raggiungibile oppure versione SMB non supportata (provare a impostarla)",
-		"could not resolve address": "nome host non risolvibile: provare con l'indirizzo IP",
-		"Operation not supported":   "versione SMB non supportata dal server: impostarla esplicitamente",
-		"No route to host":          "server non raggiungibile in rete",
-		"Connection refused":        "il server non accetta connessioni SMB (porta 445)",
-		"Operation now in progress": "server non raggiungibile (timeout)",
-		"cannot mount":              "",
-		"wrong fs type":             "manca il pacchetto cifs-utils (apt install cifs-utils)",
+		"No such file or directory": T("share does not exist or wrong path"),
+		"Host is down":              T("server unreachable or SMB version not supported (try setting it)"),
+		"could not resolve address": T("host name cannot be resolved: try the IP address"),
+		"Operation not supported":   T("SMB version not supported by the server: set it explicitly"),
+		"No route to host":          T("server unreachable on the network"),
+		"Connection refused":        T("the server does not accept SMB connections (port 445)"),
+		"Operation now in progress": T("server unreachable (timeout)"),
+		"wrong fs type":             T("the cifs-utils package is missing (apt install cifs-utils)"),
 	}
 	for k, h := range hints {
 		if h != "" && strings.Contains(msg, k) {
@@ -162,36 +161,36 @@ func explainMountError(msg string) string {
 	return msg
 }
 
-// epermHint spiega "Operation not permitted" in base all'ambiente in cui gira il servizio.
+// epermHint explains "Operation not permitted" based on where the service runs.
 func epermHint() string {
 	env := DetectEnvironment()
 	switch {
 	case env.Unprivileged:
 		return env.Advice()
 	case env.Container == "lxc":
-		return "container LXC privilegiato: abilitare la funzionalità SMB/CIFS del container (Proxmox: pct set <ID> --features mount=cifs, poi riavviarlo); se è già attiva, controllare utente, password e dominio"
+		return T("privileged LXC container: enable the container's SMB/CIFS feature (Proxmox: pct set <ID> --features mount=cifs, then restart it); if already enabled, check user, password and domain")
 	case env.Container != "":
-		return "il servizio gira in un container (" + env.Container + ") che potrebbe non consentire i montaggi: " + env.Advice()
+		return Tf("the service runs in a container (%s) that may not allow mounts: %s", env.Container, env.Advice())
 	case os.Geteuid() != 0:
-		return "il servizio non è in esecuzione come root (avviarlo con systemctl start vegasyncor)"
+		return T("the service is not running as root (start it with systemctl start vegasyncor)")
 	}
-	return "il server ha rifiutato l'accesso: controllare utente, password e dominio (per un utente locale di Windows lasciare vuoto il dominio) e provare a impostare la versione SMB"
+	return T("the server refused access: check user, password and domain (leave the domain empty for a local Windows user) and try setting the SMB version")
 }
 
-// devSMB simula una condivisione con una cartella locale (solo modalità sviluppo).
+// devSMB simulates a share with a local folder (development mode only).
 func devSMB(t SMBTarget) (*Mount, error) {
 	root := paths.DevSMBRoot()
 	if root == "" {
-		return nil, errors.New("modalità sviluppo: impostare VEGASYNCOR_DEV_SMB_ROOT per simulare le condivisioni SMB")
+		return nil, errors.New(T("development mode: set VEGASYNCOR_DEV_SMB_ROOT to simulate SMB shares"))
 	}
 	p := filepath.Join(root, t.Host, t.Share)
 	if st, err := os.Stat(p); err != nil || !st.IsDir() {
-		return nil, fmt.Errorf("mount: //%s/%s: No such file or directory → condivisione inesistente o percorso errato", t.Host, t.Share)
+		return nil, fmt.Errorf("mount: //%s/%s: No such file or directory → %s", t.Host, t.Share, T("share does not exist or wrong path"))
 	}
 	return &Mount{Point: p}, nil
 }
 
-// EnsureTools verifica che i comandi necessari siano installati.
+// EnsureTools checks that the required commands are installed.
 func EnsureTools() error {
 	tools := []string{"mount.cifs", "rsync", "mount", "umount"}
 	if paths.DevMode() {
@@ -204,7 +203,7 @@ func EnsureTools() error {
 		}
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("comandi mancanti: %s (apt install cifs-utils rsync)", strings.Join(missing, ", "))
+		return errors.New(Tf("missing commands: %s (apt install cifs-utils rsync)", strings.Join(missing, ", ")))
 	}
 	return nil
 }
@@ -216,7 +215,7 @@ func newPoint(name string) (string, error) {
 	}
 	p := filepath.Join(base, name)
 	if IsMounted(p) {
-		return "", fmt.Errorf("%s risulta già montato", p)
+		return "", errors.New(Tf("%s is already mounted", p))
 	}
 	if err := os.MkdirAll(p, 0o700); err != nil {
 		return "", err
@@ -224,8 +223,8 @@ func newPoint(name string) (string, error) {
 	return p, nil
 }
 
-// MountSMB monta //host/share su un punto di montaggio dedicato.
-// readOnly=true usa l'opzione "ro": il kernel impedisce qualsiasi scrittura.
+// MountSMB mounts //host/share on a dedicated mount point.
+// readOnly=true uses the "ro" option: the kernel prevents any write.
 func MountSMB(ctx context.Context, name string, t SMBTarget, readOnly bool) (*Mount, error) {
 	if paths.DevMode() {
 		return devSMB(t)
@@ -263,7 +262,7 @@ func MountSMB(ctx context.Context, name string, t SMBTarget, readOnly bool) (*Mo
 	return &Mount{Point: point}, nil
 }
 
-// BindReadOnly espone una cartella locale in sola lettura tramite bind mount.
+// BindReadOnly exposes a local folder read-only through a bind mount.
 func BindReadOnly(ctx context.Context, name, src string) (*Mount, error) {
 	if paths.DevMode() {
 		return &Mount{Point: src}, nil
@@ -284,7 +283,7 @@ func BindReadOnly(ctx context.Context, name, src string) (*Mount, error) {
 	return &Mount{Point: point}, nil
 }
 
-// Unmount smonta e rimuove il punto di montaggio. Usa il lazy unmount come ripiego.
+// Unmount unmounts and removes the mount point, falling back to a lazy unmount.
 func (m *Mount) Unmount() error {
 	if m == nil || paths.DevMode() && !strings.HasPrefix(m.Point, paths.MountDir()) {
 		return nil
@@ -298,7 +297,7 @@ func (m *Mount) Unmount() error {
 	return os.Remove(m.Point)
 }
 
-// mounts restituisce i punti di montaggio attivi (da /proc/self/mounts).
+// mounts returns the active mount points (from /proc/self/mounts).
 func mounts() []string {
 	raw, err := os.ReadFile("/proc/self/mounts")
 	if err != nil {
@@ -329,7 +328,7 @@ func IsMounted(p string) bool {
 	return false
 }
 
-// CleanupStale smonta eventuali residui di esecuzioni precedenti (es. dopo un crash).
+// CleanupStale unmounts leftovers of previous runs (e.g. after a crash).
 func CleanupStale() []string {
 	base := paths.MountDir() + "/"
 	var stale []string
@@ -338,7 +337,7 @@ func CleanupStale() []string {
 			stale = append(stale, m)
 		}
 	}
-	// smonta prima i percorsi più profondi
+	// unmount the deepest paths first
 	sort.Sort(sort.Reverse(sort.StringSlice(stale)))
 	for _, p := range stale {
 		_ = (&Mount{Point: p}).Unmount()
@@ -351,12 +350,12 @@ func CleanupStale() []string {
 	return stale
 }
 
-// ListShares elenca le condivisioni disco di un server usando smbclient (se installato).
+// ListShares lists the disk shares of a server using smbclient (if installed).
 func ListShares(ctx context.Context, t SMBTarget) ([]string, error) {
 	if paths.DevMode() && paths.DevSMBRoot() != "" {
 		entries, err := os.ReadDir(filepath.Join(paths.DevSMBRoot(), t.Host))
 		if err != nil {
-			return nil, fmt.Errorf("smbclient: %s: server non raggiungibile", t.Host)
+			return nil, fmt.Errorf("smbclient: %s: %s", t.Host, T("server unreachable"))
 		}
 		var shares []string
 		for _, e := range entries {
@@ -367,7 +366,7 @@ func ListShares(ctx context.Context, t SMBTarget) ([]string, error) {
 		return shares, nil
 	}
 	if _, err := exec.LookPath("smbclient"); err != nil {
-		return nil, errors.New("smbclient non installato (apt install smbclient): inserire il nome della condivisione a mano")
+		return nil, errors.New(T("smbclient is not installed (apt install smbclient): enter the share name manually"))
 	}
 	dir := paths.RuntimeDir()
 	if err := os.MkdirAll(dir, 0o700); err != nil {

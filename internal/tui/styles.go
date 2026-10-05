@@ -49,7 +49,7 @@ func trunc(s string, w int) string {
 	return runewidth.Truncate(s, w, "…")
 }
 
-// truncLeft tronca mantenendo la parte finale (utile per i percorsi).
+// truncLeft truncates keeping the final part (useful for paths).
 func truncLeft(s string, w int) string {
 	if runewidth.StringWidth(s) <= w {
 		return s
@@ -70,26 +70,26 @@ func pad(s string, w int) string {
 	return runewidth.FillRight(trunc(s, w), w)
 }
 
-// statusTag è l'etichetta di stato a larghezza fissa (5 colonne, solo ASCII).
+// statusTag is the fixed-width status tag (5 columns, ASCII only).
 func statusTag(status string) string {
 	switch status {
 	case api.StatusOK:
 		return sOK.Render("[OK] ")
 	case api.StatusWarning:
-		return sWarn.Render("[AVV]")
+		return sWarn.Render(T("[WRN]"))
 	case api.StatusError:
 		return sErr.Render("[ERR]")
 	case api.StatusCancelled:
-		return sMuted.Render("[ANN]")
+		return sMuted.Render(T("[CAN]"))
 	case api.StatusSkipped:
-		return sMuted.Render("[SAL]")
+		return sMuted.Render(T("[SKP]"))
 	case api.StatusRunning:
 		return sRun.Render("[>>>]")
 	}
 	return sMuted.Render("[ - ]")
 }
 
-// statusStyle è il colore associato a un esito.
+// statusStyle is the colour of an outcome.
 func statusStyle(status string) lipgloss.Style {
 	switch status {
 	case api.StatusOK:
@@ -104,23 +104,26 @@ func statusStyle(status string) lipgloss.Style {
 	return sMuted
 }
 
-func statusLabel(status string) string {
+// statusText is the translated name of an outcome.
+func statusText(status string) string {
 	switch status {
 	case api.StatusOK:
-		return sOK.Render("completato")
+		return T("completed")
 	case api.StatusWarning:
-		return sWarn.Render("con avvisi")
+		return T("with warnings")
 	case api.StatusError:
-		return sErr.Render("errore")
+		return T("error")
 	case api.StatusCancelled:
-		return sMuted.Render("annullato")
+		return T("cancelled")
 	case api.StatusSkipped:
-		return sMuted.Render("saltato")
+		return T("skipped")
 	case api.StatusRunning:
-		return sRun.Render("in corso")
+		return T("running")
 	}
 	return status
 }
+
+func statusLabel(status string) string { return statusStyle(status).Render(statusText(status)) }
 
 func progressBar(pct, width int) string {
 	if width < 4 {

@@ -12,18 +12,18 @@ test:
 	$(GO) vet ./...
 	$(GO) test ./...
 
-# binari statici per tutte le architetture
+# static binaries for all architectures
 dist:
 	@for a in $(ARCHS); do \
 		echo "→ linux/$$a"; \
 		CGO_ENABLED=0 GOOS=linux GOARCH=$$a $(GO) build -trimpath -ldflags "$(LDFLAGS)" -o dist/vegasyncor-linux-$$a ./cmd/vegasyncor || exit 1; \
 	done
 
-# pacchetti .deb per Debian/Ubuntu
+# .deb packages for Debian/Ubuntu
 deb:
 	GO=$(GO) packaging/build-deb.sh $(VERSION) $(ARCHS)
 
-# tutti i file di una release GitHub in dist/release
+# all the files of a GitHub release in dist/release
 release:
 	GO=$(GO) packaging/build-release.sh $(VERSION)
 

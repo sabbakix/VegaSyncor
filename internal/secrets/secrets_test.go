@@ -13,7 +13,7 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	if st, _ := os.Stat(p); st.Mode().Perm() != 0o600 {
-		t.Errorf("permessi chiave %o", st.Mode().Perm())
+		t.Errorf("key permissions %o", st.Mode().Perm())
 	}
 	enc, err := b.Encrypt("P@ss=word,ù", "c1")
 	if err != nil {
@@ -27,10 +27,10 @@ func TestRoundTrip(t *testing.T) {
 		t.Fatalf("decrypt: %q %v", got, err)
 	}
 	if _, err := b2.Decrypt(enc, "c2"); err == nil {
-		t.Error("decifrato con contesto diverso")
+		t.Error("decrypted with a different context")
 	}
 	os.Chmod(p, 0o644)
 	if _, err := LoadOrCreate(p); err == nil {
-		t.Error("chiave con permessi larghi accettata")
+		t.Error("key with loose permissions accepted")
 	}
 }

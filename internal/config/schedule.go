@@ -24,38 +24,55 @@ var ScheduleTypes = []string{SchedInterval, SchedDaily, SchedWeekly, SchedCron, 
 func ScheduleTypeLabel(t string) string {
 	switch t {
 	case SchedManual:
-		return "Solo manuale"
+		return T("Manual only")
 	case SchedInterval:
-		return "A intervalli"
+		return T("At intervals")
 	case SchedDaily:
-		return "Ogni giorno"
+		return T("Every day")
 	case SchedWeekly:
-		return "Giorni della settimana"
+		return T("Days of the week")
 	case SchedCron:
-		return "Espressione cron"
+		return T("Cron expression")
 	}
 	return t
 }
 
-// Schedule descrive quando eseguire un job.
+// Schedule describes when a job runs.
 type Schedule struct {
 	Type string `json:"type"`
-	// EveryMinutes per Type=interval.
+	// EveryMinutes for Type=interval.
 	EveryMinutes int `json:"every_minutes,omitempty"`
-	// Window opzionale per Type=interval: esegue solo tra From e To (HH:MM).
+	// Optional window for Type=interval: runs only between From and To (HH:MM).
 	WindowFrom string `json:"window_from,omitempty"`
 	WindowTo   string `json:"window_to,omitempty"`
-	// Times (HH:MM) per Type=daily/weekly.
+	// Times (HH:MM) for Type=daily/weekly.
 	Times []string `json:"times,omitempty"`
-	// Days per Type=weekly e per interval con finestra: 0=domenica ... 6=sabato.
+	// Days for Type=weekly and Type=interval: 0=Sunday ... 6=Saturday.
 	Days []int `json:"days,omitempty"`
-	// Cron: espressione standard a 5 campi.
+	// Cron: standard 5-field expression.
 	Cron string `json:"cron,omitempty"`
 }
 
-var DayNames = []string{"Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"}
+// DayName returns the translated short name of a weekday (0=Sunday).
+func DayName(d int) string {
+	switch d {
+	case 0:
+		return T("Sun")
+	case 1:
+		return T("Mon")
+	case 2:
+		return T("Tue")
+	case 3:
+		return T("Wed")
+	case 4:
+		return T("Thu")
+	case 5:
+		return T("Fri")
+	}
+	return T("Sat")
+}
 
-// WeekOrder è l'ordine di visualizzazione dei giorni (da lunedì).
+// WeekOrder is the display order of the days (from Monday).
 var WeekOrder = []int{1, 2, 3, 4, 5, 6, 0}
 
 func ParseHHMM(s string) (int, int, error) {
@@ -63,7 +80,7 @@ func ParseHHMM(s string) (int, int, error) {
 	t, err := time.Parse("15:04", s)
 	if err != nil {
 		if t, err = time.Parse("15.04", s); err != nil {
-			return 0, 0, fmt.Errorf("orario %q non valido (usare HH:MM)", s)
+			return 0, 0, errors.New(Tf("invalid time %q (use HH:MM)", s))
 		}
 	}
 	return t.Hour(), t.Minute(), nil
@@ -107,17 +124,17 @@ func daysField(days []int) string {
 func (s *Schedule) Validate() error {
 	for _, d := range s.Days {
 		if d < 0 || d > 6 {
-			return errors.New("giorno della settimana non valido")
+			return errors.New(T("invalid day of the week"))
 		}
 	}
 	switch s.Type {
 	case SchedManual:
 	case SchedInterval:
 		if s.EveryMinutes < 1 {
-			return errors.New("intervallo: indicare i minuti (almeno 1)")
+			return errors.New(T("interval: enter the minutes (at least 1)"))
 		}
 		if (s.WindowFrom == "") != (s.WindowTo == "") {
-			return errors.New("fascia oraria: indicare sia inizio che fine")
+			return errors.New(T("time window: enter both start and end"))
 		}
 		if s.WindowFrom != "" {
 			if _, _, err := ParseHHMM(s.WindowFrom); err != nil {
@@ -129,7 +146,7 @@ func (s *Schedule) Validate() error {
 		}
 	case SchedDaily, SchedWeekly:
 		if len(s.Times) == 0 {
-			return errors.New("indicare almeno un orario (es. 13:00, 22:30)")
+			return errors.New(T("enter at least one time (e.g. 13:00, 22:30)"))
 		}
 		for _, t := range s.Times {
 			if _, _, err := ParseHHMM(t); err != nil {
@@ -137,19 +154,19 @@ func (s *Schedule) Validate() error {
 			}
 		}
 		if s.Type == SchedWeekly && len(s.Days) == 0 {
-			return errors.New("selezionare almeno un giorno")
+			return errors.New(T("select at least one day"))
 		}
 	case SchedCron:
 		if _, err := ParseCron(s.Cron); err != nil {
-			return fmt.Errorf("espressione cron non valida: %v", err)
+			return errors.New(Tf("invalid cron expression: %v", err))
 		}
 	default:
-		return errors.New("tipo di pianificazione non valido")
+		return errors.New(T("invalid schedule type"))
 	}
 	return nil
 }
 
-// Next calcola la prossima esecuzione successiva a t (zero se manuale).
+// Next computes the next run after t (zero if manual).
 func (s *Schedule) Next(t time.Time) time.Time {
 	switch s.Type {
 	case SchedInterval:
@@ -182,8 +199,8 @@ func (s *Schedule) Next(t time.Time) time.Time {
 	return time.Time{}
 }
 
-// nextInterval: esecuzioni allineate all'intervallo a partire dalla mezzanotte
-// (es. ogni 30 minuti -> :00 e :30), limitate alla fascia oraria e ai giorni se indicati.
+// nextInterval: runs aligned to the interval starting from midnight
+// (e.g. every 30 minutes -> :00 and :30), limited to the time window and days if set.
 func (s *Schedule) nextInterval(t time.Time) time.Time {
 	step := time.Duration(s.EveryMinutes) * time.Minute
 	fromMin, toMin := 0, 24*60
@@ -209,7 +226,7 @@ func (s *Schedule) nextInterval(t time.Time) time.Time {
 		if fromMin <= toMin {
 			return mins >= fromMin && mins <= toMin
 		}
-		return mins >= fromMin || mins <= toMin // fascia a cavallo della mezzanotte
+		return mins >= fromMin || mins <= toMin // window spanning midnight
 	}
 	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
 	for i := 0; i < 9; i++ {
@@ -230,36 +247,36 @@ func (s *Schedule) nextInterval(t time.Time) time.Time {
 	return time.Time{}
 }
 
-// Describe restituisce una descrizione breve in italiano.
+// Describe returns a short, translated description.
 func (s *Schedule) Describe() string {
 	days := func() string {
 		if len(s.Days) == 0 || len(s.Days) == 7 {
-			return "tutti i giorni"
+			return T("every day")
 		}
 		set := map[int]bool{}
 		for _, d := range s.Days {
 			set[d] = true
 		}
 		if len(s.Days) == 5 && !set[0] && !set[6] {
-			return "lun-ven"
+			return T("Mon-Fri")
 		}
 		var n []string
 		for _, d := range WeekOrder {
 			if set[d] {
-				n = append(n, strings.ToLower(DayNames[d]))
+				n = append(n, DayName(d))
 			}
 		}
 		return strings.Join(n, ",")
 	}
 	switch s.Type {
 	case SchedManual:
-		return "manuale"
+		return T("manual")
 	case SchedInterval:
 		var e string
 		if s.EveryMinutes%60 == 0 {
-			e = fmt.Sprintf("ogni %d h", s.EveryMinutes/60)
+			e = Tf("every %d h", s.EveryMinutes/60)
 		} else {
-			e = fmt.Sprintf("ogni %d min", s.EveryMinutes)
+			e = Tf("every %d min", s.EveryMinutes)
 		}
 		if s.WindowFrom != "" {
 			e += fmt.Sprintf(" %s-%s", s.WindowFrom, s.WindowTo)
@@ -269,7 +286,7 @@ func (s *Schedule) Describe() string {
 		}
 		return e
 	case SchedDaily:
-		return "ogni giorno " + strings.Join(s.Times, ",")
+		return T("daily") + " " + strings.Join(s.Times, ",")
 	case SchedWeekly:
 		return days() + " " + strings.Join(s.Times, ",")
 	case SchedCron:

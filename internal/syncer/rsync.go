@@ -1,4 +1,4 @@
-// Package syncer esegue la copia vera e propria tramite rsync.
+// Package syncer performs the actual copy with rsync.
 package syncer
 
 import (
@@ -20,14 +20,14 @@ import (
 	"vegasyncor/internal/config"
 )
 
-// Options descrive una singola esecuzione di rsync.
+// Options describes a single rsync run.
 type Options struct {
-	Src, Dst      string // directory già montate/accessibili
+	Src, Dst      string // directories already mounted/accessible
 	Mode          string
 	Excludes      []string
 	DryRun        bool
 	BandwidthKBps int
-	RunStamp      string // usato per la cartella di archivio
+	RunStamp      string // used for the archive folder
 }
 
 type Progress struct {
@@ -35,8 +35,8 @@ type Progress struct {
 	Percent int     `json:"percent"`
 	Speed   string  `json:"speed"`
 	ETA     string  `json:"eta"`
-	Files   int     `json:"files"`   // file processati finora (itemize)
-	Current string  `json:"current"` // ultimo file
+	Files   int     `json:"files"`   // items processed so far (itemize)
+	Current string  `json:"current"` // last file
 	Ratio   float64 `json:"-"`
 }
 
@@ -48,14 +48,14 @@ type Stats struct {
 	BytesTransferred int64 `json:"bytes_transferred"`
 }
 
-// DefaultExcludes sono file di sistema Windows/macOS che non ha senso copiare.
+// DefaultExcludes are Windows/macOS system files not worth copying.
 var DefaultExcludes = []string{"Thumbs.db", "desktop.ini", "~$*", ".DS_Store", "$RECYCLE.BIN/", "System Volume Information/"}
 
 func BuildArgs(o Options) []string {
 	args := []string{
-		"-rt",                // ricorsivo + date (permessi/proprietari non hanno senso tra SMB e Linux)
-		"--modify-window=2",  // tolleranza su timestamp FAT/SMB
-		"--no-inc-recursive", // percentuale di avanzamento affidabile
+		"-rt",                // recursive + times (permissions/owners make no sense between SMB and Linux)
+		"--modify-window=2",  // tolerance for FAT/SMB timestamps
+		"--no-inc-recursive", // reliable progress percentage
 		"-i", "--info=progress2", "--stats",
 		"--partial-dir=.vegasyncor-partial",
 		"--exclude=/" + config.ArchiveDirName + "/",
@@ -100,15 +100,15 @@ func num(s string) int64 {
 	return n
 }
 
-// Result è l'esito di un'esecuzione di rsync.
+// Result is the outcome of an rsync run.
 type Result struct {
 	Stats    Stats
 	ExitCode int
-	Warning  string // per codici di uscita "parziali" (23/24)
+	Warning  string // for "partial" exit codes (23/24)
 }
 
-// Run esegue rsync scrivendo l'elenco delle modifiche su log e
-// notificando l'avanzamento tramite onProgress.
+// Run executes rsync, writing the list of changes to log and
+// reporting progress through onProgress.
 func Run(ctx context.Context, o Options, log io.Writer, onProgress func(Progress)) (Result, error) {
 	args := BuildArgs(o)
 	fmt.Fprintf(log, "# rsync %s\n", strings.Join(args, " "))
@@ -182,13 +182,13 @@ func Run(ctx context.Context, o Options, log io.Writer, onProgress func(Progress
 		res.ExitCode = ee.ExitCode()
 		switch res.ExitCode {
 		case 23:
-			res.Warning = "alcuni file non sono stati copiati (bloccati o senza permessi): vedere il log"
+			res.Warning = T("some files were not copied (locked or without permission): see the log")
 			return res, nil
 		case 24:
-			res.Warning = "alcuni file sono spariti durante la copia"
+			res.Warning = T("some files vanished during the copy")
 			return res, nil
 		}
-		return res, fmt.Errorf("rsync codice %d: %s", res.ExitCode, lastLine(stderr.String()))
+		return res, errors.New(Tf("rsync exit code %d: %s", res.ExitCode, lastLine(stderr.String())))
 	}
 	return res, err
 }
@@ -218,7 +218,7 @@ func (l *lockedWriter) Write(p []byte) (int, error) {
 	return l.w.Write(p)
 }
 
-// splitCRLF divide l'output sia su \n che su \r (rsync aggiorna il progresso con \r).
+// splitCRLF splits the output on both \n and \r (rsync updates the progress with \r).
 func splitCRLF(data []byte, atEOF bool) (int, []byte, error) {
 	for i, b := range data {
 		if b == '\n' || b == '\r' {
@@ -231,7 +231,7 @@ func splitCRLF(data []byte, atEOF bool) (int, []byte, error) {
 	return 0, nil, nil
 }
 
-// IsEmptyDir indica se una directory non contiene alcuna voce.
+// IsEmptyDir reports whether a directory has no entries.
 func IsEmptyDir(p string) (bool, error) {
 	f, err := os.Open(p)
 	if err != nil {
@@ -245,7 +245,7 @@ func IsEmptyDir(p string) (bool, error) {
 	return false, err
 }
 
-// PruneArchive rimuove le cartelle di archivio più vecchie di days giorni.
+// PruneArchive removes the archive folders older than days days.
 func PruneArchive(dst string, days int, now time.Time) ([]string, error) {
 	if days <= 0 {
 		return nil, nil

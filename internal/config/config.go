@@ -1,4 +1,4 @@
-// Package config definisce connessioni, job di sincronizzazione e pianificazioni.
+// Package config defines connections, sync jobs and schedules.
 package config
 
 import (
@@ -13,7 +13,7 @@ import (
 	"strings"
 )
 
-// Connection descrive un server SMB/CIFS con le relative credenziali.
+// Connection describes an SMB/CIFS server and its credentials.
 type Connection struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -21,7 +21,7 @@ type Connection struct {
 	Domain      string `json:"domain,omitempty"`
 	Username    string `json:"username"`
 	PasswordEnc string `json:"password_enc,omitempty"`
-	// SMBVersion: "" = negoziazione automatica, altrimenti "3.1.1", "3.0", "2.1", "2.0", "1.0".
+	// SMBVersion: "" = automatic negotiation, otherwise "3.1.1", "3.0", "2.1", "2.0", "1.0".
 	SMBVersion string `json:"smb_version,omitempty"`
 }
 
@@ -30,7 +30,7 @@ const (
 	LocLocal = "local"
 )
 
-// Location è una cartella: locale sul server oppure su una condivisione SMB.
+// Location is a folder: local to the server or on an SMB share.
 type Location struct {
 	Type         string `json:"type"`
 	ConnectionID string `json:"connection_id,omitempty"`
@@ -49,11 +49,11 @@ var Modes = []string{ModeMirrorArchive, ModeMirror, ModeAdditive}
 func ModeLabel(m string) string {
 	switch m {
 	case ModeMirror:
-		return "Mirror"
+		return T("Mirror")
 	case ModeMirrorArchive:
-		return "Mirror + archivio"
+		return T("Mirror + archive")
 	case ModeAdditive:
-		return "Solo aggiunte"
+		return T("Add only")
 	}
 	return m
 }
@@ -61,16 +61,18 @@ func ModeLabel(m string) string {
 func ModeDescription(m string) string {
 	switch m {
 	case ModeMirror:
-		return "La destinazione diventa identica alla sorgente: i file cancellati alla sorgente vengono cancellati."
+		return T("The destination becomes identical to the source: files deleted at the source are deleted.")
 	case ModeMirrorArchive:
-		return "Come Mirror, ma i file cancellati o sovrascritti vengono spostati in " + ArchiveDirName + "/<data>."
+		return Tf("Like Mirror, but deleted or overwritten files are moved to %s/<date>.", ArchiveDirName)
 	case ModeAdditive:
-		return "Copia file nuovi e modificati, non cancella mai nulla nella destinazione."
+		return T("Copies new and changed files, never deletes anything in the destination.")
 	}
 	return ""
 }
 
-// ArchiveDirName è la cartella (nella radice della destinazione) che contiene le versioni archiviate.
+// ArchiveDirName is the folder (in the destination root) holding archived versions.
+// It must not be renamed: existing installations already store archives under this
+// name, and a mirror would no longer recognise (and could delete) an old folder.
 const ArchiveDirName = ".vegasyncor-archivio"
 
 type Job struct {
@@ -84,15 +86,17 @@ type Job struct {
 	ArchiveDays int      `json:"archive_days,omitempty"`
 	Schedule    Schedule `json:"schedule"`
 	Excludes    []string `json:"excludes,omitempty"`
-	// AllowEmptySource consente un mirror anche se la sorgente risulta vuota
-	// (di norma viene bloccato per non svuotare la destinazione per errore).
+	// AllowEmptySource allows a mirror even if the source is empty
+	// (normally blocked so the destination is not wiped by mistake).
 	AllowEmptySource bool `json:"allow_empty_source,omitempty"`
-	// BandwidthKBps limita la banda in KB/s (0 = illimitata).
+	// BandwidthKBps limits the bandwidth in KB/s (0 = unlimited).
 	BandwidthKBps int `json:"bandwidth_kbps,omitempty"`
 }
 
 type Config struct {
-	MaxParallel int          `json:"max_parallel"`
+	MaxParallel int `json:"max_parallel"`
+	// Language of the interface and of the service messages ("en", "it").
+	Language    string       `json:"language,omitempty"`
 	Connections []Connection `json:"connections"`
 	Jobs        []Job        `json:"jobs"`
 }
@@ -125,7 +129,7 @@ func Load(path string) (*Config, error) {
 	return c, nil
 }
 
-// Save scrive la configurazione in modo atomico (file temporaneo + rename).
+// Save writes the configuration atomically (temporary file + rename).
 func (c *Config) Save(path string) error {
 	raw, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -167,23 +171,23 @@ func (cn *Connection) Validate() error {
 	cn.Username = strings.TrimSpace(cn.Username)
 	cn.Domain = strings.TrimSpace(cn.Domain)
 	if cn.Name == "" {
-		return errors.New("il nome della connessione è obbligatorio")
+		return errors.New(T("the connection name is required"))
 	}
 	if cn.Host == "" || !hostRe.MatchString(cn.Host) {
-		return errors.New("host non valido (es. 192.168.1.10 oppure server01)")
+		return errors.New(T("invalid host (e.g. 192.168.1.10 or server01)"))
 	}
 	if strings.ContainsAny(cn.Username+cn.Domain, ",\n") {
-		return errors.New("utente o dominio contengono caratteri non ammessi")
+		return errors.New(T("user or domain contain characters that are not allowed"))
 	}
 	switch cn.SMBVersion {
 	case "", "3.1.1", "3.0", "2.1", "2.0", "1.0":
 	default:
-		return errors.New("versione SMB non valida")
+		return errors.New(T("invalid SMB version"))
 	}
 	return nil
 }
 
-// CleanSubPath normalizza un percorso relativo all'interno di una condivisione.
+// CleanSubPath normalises a relative path inside a share.
 func CleanSubPath(p string) (string, error) {
 	p = strings.ReplaceAll(strings.TrimSpace(p), `\`, "/")
 	p = strings.Trim(p, "/")
@@ -192,7 +196,7 @@ func CleanSubPath(p string) (string, error) {
 	}
 	clean := filepath.Clean(p)
 	if clean == ".." || strings.HasPrefix(clean, "../") {
-		return "", errors.New("il percorso non può uscire dalla condivisione")
+		return "", errors.New(T("the path cannot leave the share"))
 	}
 	if clean == "." {
 		return "", nil
@@ -204,11 +208,11 @@ func (l *Location) validate(c *Config, what string) error {
 	switch l.Type {
 	case LocSMB:
 		if c.Connection(l.ConnectionID) == nil {
-			return fmt.Errorf("%s: selezionare una connessione", what)
+			return errors.New(what + ": " + T("select a connection"))
 		}
 		l.Share = strings.Trim(strings.TrimSpace(l.Share), `\/`)
 		if l.Share == "" || strings.ContainsAny(l.Share, `/\,`) {
-			return fmt.Errorf("%s: nome condivisione non valido", what)
+			return errors.New(what + ": " + T("invalid share name"))
 		}
 		p, err := CleanSubPath(l.Path)
 		if err != nil {
@@ -219,18 +223,18 @@ func (l *Location) validate(c *Config, what string) error {
 		l.ConnectionID, l.Share = "", ""
 		l.Path = filepath.Clean(strings.TrimSpace(l.Path))
 		if !filepath.IsAbs(l.Path) {
-			return fmt.Errorf("%s: il percorso locale deve essere assoluto", what)
+			return errors.New(what + ": " + T("the local path must be absolute"))
 		}
 		if l.Path == "/" {
-			return fmt.Errorf("%s: non è possibile usare la radice /", what)
+			return errors.New(what + ": " + T("the root / cannot be used"))
 		}
 	default:
-		return fmt.Errorf("%s: tipo sconosciuto", what)
+		return errors.New(what + ": " + T("unknown type"))
 	}
 	return nil
 }
 
-// Display restituisce una rappresentazione leggibile della posizione.
+// Display returns a readable representation of the location.
 func (l Location) Display(c *Config) string {
 	switch l.Type {
 	case LocSMB:
@@ -252,34 +256,34 @@ func (l Location) Display(c *Config) string {
 func (j *Job) Validate(c *Config) error {
 	j.Name = strings.TrimSpace(j.Name)
 	if j.Name == "" {
-		return errors.New("il nome del job è obbligatorio")
+		return errors.New(T("the job name is required"))
 	}
-	if err := j.Source.validate(c, "sorgente"); err != nil {
+	if err := j.Source.validate(c, T("source")); err != nil {
 		return err
 	}
-	if err := j.Dest.validate(c, "destinazione"); err != nil {
+	if err := j.Dest.validate(c, T("destination")); err != nil {
 		return err
 	}
 	if j.Source == j.Dest {
-		return errors.New("sorgente e destinazione coincidono")
+		return errors.New(T("source and destination are the same"))
 	}
 	if j.Source.Type == LocLocal && j.Dest.Type == LocLocal {
 		s, d := j.Source.Path+"/", j.Dest.Path+"/"
 		if strings.HasPrefix(d, s) || strings.HasPrefix(s, d) {
-			return errors.New("sorgente e destinazione non possono essere annidate")
+			return errors.New(T("source and destination cannot be nested"))
 		}
 	}
 	switch j.Mode {
 	case ModeMirror, ModeAdditive:
 	case ModeMirrorArchive:
 		if j.ArchiveDays < 0 {
-			return errors.New("giorni di archivio non validi")
+			return errors.New(T("invalid number of archive days"))
 		}
 	default:
-		return errors.New("modalità non valida")
+		return errors.New(T("invalid mode"))
 	}
 	if j.BandwidthKBps < 0 {
-		return errors.New("limite di banda non valido")
+		return errors.New(T("invalid bandwidth limit"))
 	}
 	var ex []string
 	for _, e := range j.Excludes {

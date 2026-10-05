@@ -26,11 +26,11 @@ func TestDetectEnvironment(t *testing.T) {
 		unpriv      bool
 		problemHint string
 	}{
-		{"macchina fisica", map[string]string{"/proc/self/uid_map": "         0          0 4294967295\n"}, "", false, ""},
-		{"LXC non privilegiato", map[string]string{
+		{"physical machine", map[string]string{"/proc/self/uid_map": "         0          0 4294967295\n"}, "", false, ""},
+		{"unprivileged LXC", map[string]string{
 			"/proc/self/uid_map": "         0     100000      65536\n", "/run/systemd/container": "lxc\n"},
 			"lxc", true, "pct set <ID> --features mount=cifs"},
-		{"LXC privilegiato", map[string]string{
+		{"privileged LXC", map[string]string{
 			"/proc/self/uid_map": "0 0 4294967295", "/proc/1/environ": "PATH=/bin\x00container=lxc\x00"}, "lxc", false, ""},
 		{"Docker", map[string]string{"/proc/self/uid_map": "0 0 4294967295", "/.dockerenv": ""}, "docker", false, ""},
 		{"WSL", map[string]string{"/proc/self/uid_map": "0 0 4294967295", "/run/systemd/container": "wsl"}, "", false, ""},

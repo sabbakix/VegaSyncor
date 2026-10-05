@@ -10,9 +10,10 @@ import (
 
 	"vegasyncor/internal/api"
 	"vegasyncor/internal/config"
+	"vegasyncor/internal/i18n"
 )
 
-// View disegna lo schermo; zone.Scan registra le posizioni delle parti cliccabili.
+// View draws the screen; zone.Scan records the positions of the clickable parts.
 func (m *Model) View() string {
 	helpKeys = helpKeys[:0]
 	return zone.Scan(m.render())
@@ -20,7 +21,7 @@ func (m *Model) View() string {
 
 func (m *Model) render() string {
 	if m.w == 0 {
-		return "caricamento…"
+		return T("loading…")
 	}
 	var body, help string
 	switch {
@@ -29,9 +30,9 @@ func (m *Model) render() string {
 	case m.form != nil:
 		body, help = m.viewForm()
 	case m.st == nil && m.connErr != nil:
-		body, help = m.viewNoDaemon(), "q esci"
+		body, help = m.viewNoDaemon(), T("q quit")
 	case m.st == nil:
-		body = sMuted.Render("  connessione al servizio…")
+		body = sMuted.Render("  " + T("connecting to the service…"))
 	default:
 		switch m.tab {
 		case tabJobs:
@@ -47,7 +48,7 @@ func (m *Model) render() string {
 	footer := m.viewFooter(help)
 	bodyH := m.h - lipgloss.Height(header) - lipgloss.Height(footer)
 	if m.form != nil && !m.logOpen {
-		// barra descrizione ancorata in fondo, sopra i tasti
+		// description bar anchored at the bottom, above the keys
 		body = fitHeight(body, bodyH-formDescHeight) + "\n" + m.viewFormDescription()
 	} else {
 		body = fitHeight(body, bodyH)
@@ -71,7 +72,7 @@ func fitHeight(s string, h int) string {
 	return strings.Join(lines, "\n")
 }
 
-// placeOverlay centra una finestra modale nello schermo.
+// placeOverlay centres a modal window on the screen.
 func placeOverlay(w, h int, box string) string {
 	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box,
 		lipgloss.WithWhitespaceChars(" "))
@@ -80,18 +81,19 @@ func placeOverlay(w, h int, box string) string {
 func (m *Model) viewHeader() string {
 	left := sTitle.Render(" VegaSyncor ")
 	var tabs []string
-	for i, n := range tabNames {
+	for i, n := range tabNames() {
 		st := sTabOff
 		if tab(i) == m.tab && m.form == nil {
 			st = sTabOn
 		}
 		tabs = append(tabs, zone.Mark(fmt.Sprintf("tab:%d", i), st.Render(n)))
 	}
-	// parti a destra in ordine di importanza: l'orologio resta sempre, poi stato e nome host
+	// right-hand parts by importance: clock and language always stay, then state and host name
 	var state, clock, clockShort, host string
+	lang := m.viewLanguages()
 	switch {
 	case m.connErr != nil:
-		state = sErr.Render("servizio non raggiungibile")
+		state = sErr.Render(T("service unreachable"))
 	case m.st != nil:
 		running := 0
 		for _, j := range m.st.Jobs {
@@ -99,18 +101,18 @@ func (m *Model) viewHeader() string {
 				running++
 			}
 		}
-		state = sOK.Render("servizio attivo")
+		state = sOK.Render(T("service running"))
 		if running > 0 {
-			state = sRun.Render(fmt.Sprintf("%d in esecuzione", running))
+			state = sRun.Render(Tf("%d running", running))
 		}
 		now := m.serverNow()
 		clock = sClock.Render(fmtClock(now, m.st.ZoneAbbr))
-		clockShort = sClock.Render(now.Format("02/01 15:04:05"))
+		clockShort = sClock.Render(now.Format(i18n.ShortDateTimeLayout() + ":05"))
 		host = sMuted.Render(m.st.Hostname)
 	}
 	line := left + " " + strings.Join(tabs, " ")
 	var right string
-	for _, parts := range [][]string{{state, clock, host}, {state, clock}, {clock}, {clockShort}} {
+	for _, parts := range [][]string{{state, clock, lang, host}, {state, clock, lang}, {clock, lang}, {clockShort, lang}, {clockShort}} {
 		var nonEmpty []string
 		for _, p := range parts {
 			if p != "" {
@@ -141,8 +143,8 @@ func (m *Model) warningsHeight() int {
 	return lipgloss.Height(m.viewWarnings())
 }
 
-// viewWarnings mostra in evidenza i problemi dell'ambiente segnalati dal servizio
-// (es. container non privilegiato), con il testo completo a capo.
+// viewWarnings highlights the environment problems reported by the service
+// (e.g. unprivileged container), with the full text wrapped.
 func (m *Model) viewWarnings() string {
 	inner := max(m.w-6, 20)
 	var parts []string
@@ -167,25 +169,25 @@ func (m *Model) viewFooter(help string) string {
 	msg := ""
 	if m.flash != "" {
 		if m.flashErr {
-			msg = sErr.Render(" ERRORE: " + trunc(m.flash, m.w-10))
+			msg = sErr.Render(" " + T("ERROR:") + " " + trunc(m.flash, m.w-10))
 		} else {
 			msg = sOK.Render(" OK: " + trunc(m.flash, m.w-6))
 		}
 	} else if m.connErr != nil && m.st != nil {
-		msg = sErr.Render(" ERRORE: " + trunc(m.connErr.Error(), m.w-10))
+		msg = sErr.Render(" " + T("ERROR:") + " " + trunc(m.connErr.Error(), m.w-10))
 	}
 	return msg + "\n" + rule(m.w) + "\n" + renderHelp(help, m.w)
 }
 
-// helpExtra restituisce le righe in più occupate dalla barra dei comandi quando va a capo.
+// helpExtra returns the extra lines taken by the command bar when it wraps.
 func helpExtra(help string, w int) int {
 	n := len(helpKeys)
 	h := lipgloss.Height(renderHelp(help, w))
-	helpKeys = helpKeys[:n] // il calcolo non deve registrare tasti cliccabili
+	helpKeys = helpKeys[:n] // measuring must not register clickable keys
 	return max(h-1, 0)
 }
 
-// renderHelp evidenzia i tasti: formato "tasto descrizione · tasto descrizione".
+// renderHelp highlights the keys: format "key description · key description".
 func renderHelp(h string, w int) string {
 	if h == "" {
 		return ""
@@ -200,7 +202,7 @@ func renderHelp(h string, w int) string {
 		}
 		parts = append(parts, item)
 	}
-	// separatore sempre visibile; se le voci non stanno in una riga si va a capo
+	// separator always visible; if the items do not fit on one line, wrap
 	sep := sSep.Render(" │ ")
 	var lines []string
 	line := ""
@@ -219,11 +221,11 @@ func renderHelp(h string, w int) string {
 }
 
 func (m *Model) viewNoDaemon() string {
-	msg := sErr.Render("Impossibile contattare il servizio VegaSyncor") + "\n\n" +
+	msg := sErr.Render(T("Cannot contact the VegaSyncor service")) + "\n\n" +
 		m.connErr.Error() + "\n\n" +
-		sMuted.Render("Verificare che sia avviato:") + "\n" +
+		sMuted.Render(T("Check that it is running:")) + "\n" +
 		"  sudo systemctl status vegasyncor\n  sudo systemctl start vegasyncor\n\n" +
-		sMuted.Render("La TUI riprova automaticamente ogni secondo.")
+		sMuted.Render(T("The TUI retries automatically every second."))
 	return "\n" + lipgloss.NewStyle().MarginLeft(2).Render(sBox.Render(msg))
 }
 
@@ -231,29 +233,30 @@ func (m *Model) viewNoDaemon() string {
 
 func scheduleText(j api.JobStatus) string {
 	if !j.Job.Enabled {
-		return "sospeso"
+		return T("paused")
 	}
 	return j.Job.Schedule.Describe()
 }
 
 func (m *Model) viewJobs() (string, string) {
-	help := "n nuova · invio modifica · r avvia · s simula · x interrompi · p sospendi · l log · d elimina · tab scheda · q esci"
+	help := T("n new · enter edit · r run · s dry-run · x stop · p pause · l log · d delete · tab next tab · L language · q quit")
 	jobs := m.jobs()
 	if len(jobs) == 0 {
 		var b strings.Builder
-		b.WriteString("\n  " + sBold.Render("Nessuna sincronizzazione configurata.") + "\n\n")
+		b.WriteString("\n  " + sBold.Render(T("No syncs configured.")) + "\n\n")
 		if len(m.conns()) == 0 {
-			b.WriteString("  Per iniziare:\n")
-			b.WriteString("    1. vai alla scheda " + sKey.Render("2 Connessioni") + " e premi " + sKey.Render("n") + " per salvare le credenziali di un PC o server\n")
-			b.WriteString("    2. torna qui e premi " + sKey.Render("n") + " per creare la prima sincronizzazione\n")
+			b.WriteString("  " + T("To get started:") + "\n")
+			b.WriteString("    " + Tf("1. go to the %s tab and press %s to save the credentials of a PC or server",
+				sKey.Render(tabNames()[1]), sKey.Render("n")) + "\n")
+			b.WriteString("    " + Tf("2. come back here and press %s to create the first sync", sKey.Render("n")) + "\n")
 		} else {
-			b.WriteString("  Premi " + sKey.Render("n") + " per creare la prima sincronizzazione.\n")
+			b.WriteString("  " + Tf("Press %s to create the first sync.", sKey.Render("n")) + "\n")
 		}
-		return b.String(), "n nuova · tab scheda · q esci"
+		return b.String(), T("n new · tab next tab · L language · q quit")
 	}
 
 	w := m.w
-	// colonne: icona(2) nome quando ultima prossima + percorso (resto)
+	// columns: tag, name, when, last, next + route (the rest)
 	nameW, whenW, lastW, nextW := 22, 20, 18, 13
 	if w < 100 {
 		nameW, lastW, nextW = 16, 13, 12
@@ -266,11 +269,11 @@ func (m *Model) viewJobs() (string, string) {
 	routeW := max(w-fixed, 16)
 
 	var b strings.Builder
-	hdr := "       " + pad("NOME", nameW) + " " + pad("SORGENTE  →  DESTINAZIONE", routeW) + " "
+	hdr := "       " + pad(T("NAME"), nameW) + " " + pad(T("SOURCE  →  DESTINATION"), routeW) + " "
 	if showWhen {
-		hdr += pad("QUANDO", whenW) + " "
+		hdr += pad(T("WHEN"), whenW) + " "
 	}
-	hdr += pad("ULTIMA", lastW) + " " + pad("PROSSIMA", nextW)
+	hdr += pad(T("LAST"), lastW) + " " + pad(T("NEXT"), nextW)
 	b.WriteString(sMuted.Render(hdr) + "\n")
 
 	listH := max(m.h-22-m.warningsHeight()-helpExtra(help, m.w), 3)
@@ -288,11 +291,11 @@ func (m *Model) viewJobs() (string, string) {
 		}
 		half := (routeW - 3) / 2
 		route := pad(truncLeft(j.Source, half), half) + " → " + truncLeft(j.Dest, routeW-half-3)
-		last := "mai eseguito"
+		last := T("never run")
 		if j.Current != nil {
-			last = "in corso"
+			last = T("running")
 			if p := j.Current.Progress; p != nil {
-				last = fmt.Sprintf("in corso %d%%", p.Percent)
+				last = Tf("running %d%%", p.Percent)
 			}
 		} else if j.Last != nil {
 			last = fmtTime(j.Last.Start)
@@ -327,55 +330,55 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 
 	title := sBold.Render(j.Job.Name)
 	if !j.Job.Enabled {
-		title += "  " + sMuted.Render("(sospeso)")
+		title += "  " + sMuted.Render("("+T("paused")+")")
 	}
 	lines = append(lines, title)
 	ro := ""
 	if j.Job.SourceRO {
-		ro = "  " + sROBadge.Render("SOLA LETTURA")
+		ro = "  " + sROBadge.Render(T("READ-ONLY"))
 	}
-	lines = append(lines, lbl("Da")+trunc(j.Source, w-36)+ro)
-	lines = append(lines, lbl("A")+trunc(j.Dest, w-20))
+	lines = append(lines, lbl(T("From"))+trunc(j.Source, w-36)+ro)
+	lines = append(lines, lbl(T("To"))+trunc(j.Dest, w-20))
 	mode := config.ModeLabel(j.Job.Mode)
 	if j.Job.Mode == config.ModeMirrorArchive {
 		if j.Job.ArchiveDays > 0 {
-			mode += fmt.Sprintf(" (conserva %d gg)", j.Job.ArchiveDays)
+			mode += " " + Tf("(keeps %d days)", j.Job.ArchiveDays)
 		} else {
-			mode += " (conserva per sempre)"
+			mode += " " + T("(keeps forever)")
 		}
 	}
-	lines = append(lines, lbl("Modalità")+mode)
+	lines = append(lines, lbl(T("Mode"))+mode)
 	sched := j.Job.Schedule.Describe()
 	if !j.Job.Enabled {
-		sched += sMuted.Render("  – sospeso, solo avvio manuale")
+		sched += sMuted.Render("  – " + T("paused, manual start only"))
 	} else if !j.Next.IsZero() {
-		sched += sMuted.Render("  – prossima: "+fmtTime(j.Next)+" ") + sRun.Render("("+fmtUntil(j.Next.Sub(m.serverNow()))+")")
+		sched += sMuted.Render("  – "+T("next:")+" "+fmtTime(j.Next)+" ") + sRun.Render("("+fmtUntil(j.Next.Sub(m.serverNow()))+")")
 	}
-	lines = append(lines, lbl("Pianificazione")+sched)
+	lines = append(lines, lbl(T("Schedule"))+sched)
 
 	if r := j.Current; r != nil {
 		lines = append(lines, "")
-		tag := "In esecuzione"
+		tag := T("Running")
 		if r.DryRun {
-			tag = "Simulazione in corso"
+			tag = T("Dry run in progress")
 		}
-		lines = append(lines, sRun.Render(tag)+sMuted.Render(fmt.Sprintf("  da %s · %s", fmtDur(m.serverNow().Sub(r.Start)), r.Phase)))
+		lines = append(lines, sRun.Render(tag)+sMuted.Render("  "+Tf("for %s · %s", fmtDur(m.serverNow().Sub(r.Start)), r.Phase)))
 		if p := r.Progress; p != nil {
 			barW := min(max(w-50, 10), 50)
 			lines = append(lines, progressBar(p.Percent, barW)+fmt.Sprintf(" %3d%%  %s  %s  ETA %s",
 				p.Percent, api.HumanBytes(p.Bytes), p.Speed, p.ETA))
 			if p.Current != "" {
-				lines = append(lines, sMuted.Render(fmt.Sprintf("%d elementi · ", p.Files))+trunc(p.Current, w-20))
+				lines = append(lines, sMuted.Render(Tf("%d items · ", p.Files))+trunc(p.Current, w-20))
 			}
 		}
 	} else if r := j.Last; r != nil {
 		lines = append(lines, "")
-		kind := "Ultima esecuzione"
+		kind := T("Last run")
 		if r.DryRun {
-			kind = "Ultima simulazione"
+			kind = T("Last dry run")
 		}
 		lines = append(lines, lbl(kind)+statusLabel(r.Status)+
-			sMuted.Render(fmt.Sprintf("  %s · durata %s · %s", fmtTime(r.Start), fmtDur(r.Duration()), r.Trigger)))
+			sMuted.Render("  "+Tf("%s · duration %s · %s", fmtTime(r.Start), fmtDur(r.Duration()), api.TriggerLabel(r.Trigger))))
 		if r.Message != "" {
 			st := sMuted
 			if r.Status == api.StatusError {
@@ -383,7 +386,7 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 			} else if r.Status == api.StatusWarning {
 				st = sWarn
 			}
-			// i messaggi di errore possono essere lunghi: vanno a capo (max 5 righe)
+			// error messages can be long: wrap them (max 5 lines)
 			msgW := max(w-22, 20)
 			wrapped := strings.Split(lipgloss.NewStyle().Width(msgW).Render(strings.Join(strings.Fields(r.Message), " ")), "\n")
 			if len(wrapped) > 5 {
@@ -400,13 +403,13 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 // ---------- scheda connessioni ----------
 
 func (m *Model) viewConns() (string, string) {
-	help := "n nuova · invio modifica · t prova connessione · d elimina · tab scheda · q esci"
+	help := T("n new · enter edit · t test connection · d delete · tab next tab · L language · q quit")
 	conns := m.conns()
 	if len(conns) == 0 {
-		return "\n  " + sBold.Render("Nessuna connessione salvata.") + "\n\n" +
-			"  Una connessione contiene indirizzo del PC/server e credenziali di accesso.\n" +
-			"  La password viene cifrata (AES-256) e non è mai visibile dopo il salvataggio.\n\n" +
-			"  Premi " + sKey.Render("n") + " per aggiungerne una.\n", "n nuova · tab scheda · q esci"
+		return "\n  " + sBold.Render(T("No saved connections.")) + "\n\n" +
+			"  " + T("A connection holds the address of the PC/server and the login credentials.") + "\n" +
+			"  " + T("The password is encrypted (AES-256) and is never visible after saving.") + "\n\n" +
+			"  " + Tf("Press %s to add one.", sKey.Render("n")) + "\n", T("n new · tab next tab · L language · q quit")
 	}
 	used := map[string]int{}
 	for _, j := range m.jobs() {
@@ -417,8 +420,8 @@ func (m *Model) viewConns() (string, string) {
 	}
 	nameW, hostW, userW, verW, pwW := 26, 22, 26, 10, 12
 	var b strings.Builder
-	b.WriteString(sMuted.Render("   "+pad("NOME", nameW)+" "+pad("HOST", hostW)+" "+pad("UTENTE", userW)+" "+
-		pad("SMB", verW)+" "+pad("PASSWORD", pwW)+" USATA DA") + "\n")
+	b.WriteString(sMuted.Render("   "+pad(T("NAME"), nameW)+" "+pad(T("HOST"), hostW)+" "+pad(T("USER"), userW)+" "+
+		pad("SMB", verW)+" "+pad(T("PASSWORD"), pwW)+" "+T("USED BY")) + "\n")
 	for i, c := range conns {
 		user := c.Username
 		if c.Domain != "" {
@@ -428,34 +431,34 @@ func (m *Model) viewConns() (string, string) {
 		if ver == "" {
 			ver = "auto"
 		}
-		pw := "salvata"
+		pw := T("saved")
 		if !c.HasPassword {
-			pw = "MANCANTE"
+			pw = T("MISSING")
 		}
 		row := pad(c.Name, nameW) + " " + pad(c.Host, hostW) + " " + pad(user, userW) + " " +
-			pad(ver, verW) + " " + pad(pw, pwW) + " " + fmt.Sprintf("%d job", used[c.ID])
+			pad(ver, verW) + " " + pad(pw, pwW) + " " + Tf("%d jobs", used[c.ID])
 		line := "   " + row
 		if i == m.connCur {
 			line = " " + sKey.Render(">") + " " + sSel.Render(row)
 		}
 		b.WriteString(zone.Mark(fmt.Sprintf("conn:%d", i), line) + "\n")
 	}
-	b.WriteString("\n" + sMuted.Render("  Le password sono cifrate nel file di configurazione con una chiave master accessibile solo a root."))
+	b.WriteString("\n" + sMuted.Render("  "+T("Passwords are encrypted in the configuration file with a master key readable only by root.")))
 	return b.String(), help
 }
 
 // ---------- scheda storico ----------
 
 func (m *Model) viewHistory() (string, string) {
-	help := "↑↓ scorri · invio apri log · r aggiorna · tab scheda · q esci"
+	help := T("↑↓ scroll · enter open log · r refresh · tab next tab · L language · q quit")
 	if len(m.history) == 0 {
-		return "\n  " + sMuted.Render("Nessuna esecuzione registrata."), help
+		return "\n  " + sMuted.Render(T("No runs recorded.")), help
 	}
-	startW, jobW, durW, stW := 13, 24, 8, 12
+	startW, jobW, durW, stW := 13, 24, 9, 14
 	msgW := max(m.w-startW-jobW-durW-stW-10, 10)
 	var b strings.Builder
-	b.WriteString(sMuted.Render("   "+pad("AVVIO", startW)+" "+pad("JOB", jobW)+" "+pad("DURATA", durW)+" "+
-		pad("ESITO", stW)+" DETTAGLI") + "\n")
+	b.WriteString(sMuted.Render("   "+pad(T("START"), startW)+" "+pad(T("JOB"), jobW)+" "+pad(T("DURATION"), durW)+" "+
+		pad(T("RESULT"), stW)+" "+T("DETAILS")) + "\n")
 	listH := max(m.h-8-m.warningsHeight()-helpExtra(help, m.w), 3)
 	m.histOffset = listWindow(m.histCur, m.histOffset, len(m.history), listH)
 	for i := m.histOffset; i < len(m.history) && i < m.histOffset+listH; i++ {
@@ -464,8 +467,7 @@ func (m *Model) viewHistory() (string, string) {
 		if r.DryRun {
 			job += " (sim)"
 		}
-		stTxt := map[string]string{api.StatusOK: "completato", api.StatusWarning: "avvisi", api.StatusError: "errore",
-			api.StatusCancelled: "annullato", api.StatusSkipped: "saltato", api.StatusRunning: "in corso"}[r.Status]
+		stTxt := statusText(r.Status)
 		head := pad(fmtTime(r.Start), startW) + " " + pad(job, jobW) + " " + pad(fmtDur(r.Duration()), durW) + " "
 		tail := " " + trunc(r.Message, msgW)
 		row := head + pad(stTxt, stW) + tail
@@ -482,7 +484,7 @@ func (m *Model) viewHistory() (string, string) {
 // ---------- log ----------
 
 func (m *Model) viewLog() string {
-	help := renderHelp("↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · r ricarica · esc chiudi", m.w)
+	help := renderHelp(T("↑↓ scroll · PgUp/PgDn page · g/G top/bottom · r reload · esc close"), m.w)
 	m.logView.Height = max(m.h-3-lipgloss.Height(help), 3)
 	title := sTitle.Render(" Log: ") + sBold.Render(m.logTitle)
 	pct := fmt.Sprintf("%3.0f%%", m.logView.ScrollPercent()*100)
@@ -494,7 +496,7 @@ func (m *Model) viewLog() string {
 
 func (m *Model) viewForm() (string, string) {
 	fm := m.form
-	help := "↑↓ campo · ←→ scegli · spazio attiva · ctrl+s salva · esc annulla"
+	help := T("↑↓ field · ←→ choose · space toggle · ctrl+s save · esc cancel")
 	var top string
 	if m.formKind == "job" {
 		top = m.jobPreview() + "\n"
@@ -505,11 +507,11 @@ func (m *Model) viewForm() (string, string) {
 	return head + top + lipgloss.NewStyle().PaddingLeft(1).Render(body), help
 }
 
-// formDescHeight è l'altezza fissa della barra descrizione in fondo al form.
+// formDescHeight is the fixed height of the description bar at the bottom of the form.
 const formDescHeight = 3
 
-// viewFormDescription è la barra fissa in fondo al form: descrive il campo attivo
-// oppure mostra l'errore di validazione. Ha sempre la stessa altezza.
+// viewFormDescription is the fixed bar at the bottom of the form: it describes the
+// active field or shows the validation error. It always has the same height.
 func (m *Model) viewFormDescription() string {
 	fm := m.form
 	w := m.w - 2
@@ -522,7 +524,7 @@ func (m *Model) viewFormDescription() string {
 		}
 		text = st.Render(fm.Err)
 	case m.saving:
-		text = sMuted.Render("salvataggio…")
+		text = sMuted.Render(T("saving…"))
 	default:
 		label, desc := fm.description()
 		if desc == "" {
@@ -543,7 +545,7 @@ func (m *Model) viewFormDescription() string {
 	return rule(m.w) + "\n" + strings.Join(lines, "\n")
 }
 
-// jobPreview mostra in modo visivo sorgente → destinazione mentre si compila il form.
+// jobPreview shows source → destination visually while the form is being filled in.
 func (m *Model) jobPreview() string {
 	fm := m.form
 	cfg := &config.Config{}
@@ -560,22 +562,22 @@ func (m *Model) jobPreview() string {
 	}
 	show := func(l config.Location) string {
 		if l.Type == config.LocSMB && l.Share == "" {
-			return sMuted.Render("(scegliere la condivisione)")
+			return sMuted.Render(T("(choose the share)"))
 		}
 		if l.Type == config.LocLocal && l.Path == "" {
-			return sMuted.Render("(scegliere la cartella)")
+			return sMuted.Render(T("(choose the folder)"))
 		}
 		return l.Display(cfg)
 	}
 	boxW := max((m.w-10)/2, 20)
 	inner := boxW - 4
-	src := sMuted.Render("SORGENTE") + "\n" + truncLeft(show(loc("src")), inner) + "\n"
+	src := sMuted.Render(T("SOURCE")) + "\n" + truncLeft(show(loc("src")), inner) + "\n"
 	if fm.get("src_ro").Bool {
-		src += sROBadge.Render("SOLA LETTURA")
+		src += sROBadge.Render(T("READ-ONLY"))
 	} else {
-		src += sErr.Render("ATTENZIONE: sorgente scrivibile")
+		src += sErr.Render(T("WARNING: writable source"))
 	}
-	dst := sMuted.Render("DESTINAZIONE") + "\n" + truncLeft(show(loc("dst")), inner) + "\n" +
+	dst := sMuted.Render(T("DESTINATION")) + "\n" + truncLeft(show(loc("dst")), inner) + "\n" +
 		sMuted.Render(trunc(config.ModeLabel(fm.choice("mode")), inner))
 	arrow := lipgloss.NewStyle().Foreground(cAccent).Bold(true).Padding(0, 1).Render("\n──>")
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
@@ -591,10 +593,10 @@ func (m *Model) overlay() string {
 	switch {
 	case m.info != nil:
 		return sFocusBox.Width(modalW).Render(sTitle.Render(m.info.title) + "\n\n" + m.info.body +
-			"\n\n" + renderHelp("invio chiudi", modalW))
+			"\n\n" + renderHelp(T("enter close"), modalW))
 	case m.confirm != nil:
 		return sFocusBox.Width(min(modalW, 70)).Render(sBold.Render(m.confirm.text) + "\n\n" +
-			renderHelp("s sì · n no", modalW))
+			renderHelp(T("y yes · n no"), modalW))
 	case m.picker != nil:
 		p := m.picker
 		var lines []string
@@ -608,7 +610,7 @@ func (m *Model) overlay() string {
 			lines = append(lines, zone.Mark(fmt.Sprintf("pick:%d", i), line))
 		}
 		return sFocusBox.Width(modalW).Render(sTitle.Render(p.title) + "\n\n" + strings.Join(lines, "\n") +
-			"\n\n" + renderHelp("invio scegli · esc annulla", modalW))
+			"\n\n" + renderHelp(T("enter choose · esc cancel"), modalW))
 	case m.browser != nil:
 		return m.viewBrowser(modalW)
 	}
@@ -617,7 +619,7 @@ func (m *Model) overlay() string {
 
 func (m *Model) viewBrowser(w int) string {
 	b := m.browser
-	title := "Scegli cartella"
+	title := T("Choose folder")
 	if b.loc.Type == config.LocSMB {
 		host := ""
 		for _, c := range m.conns() {
@@ -625,13 +627,13 @@ func (m *Model) viewBrowser(w int) string {
 				host = c.Host
 			}
 		}
-		title += sMuted.Render("  su " + `\\` + host)
+		title += sMuted.Render("  " + T("on") + " " + `\\` + host)
 	}
 	path := sBold.Render(truncLeft(b.displayPath(), w-6))
 	var body string
 	switch {
 	case b.loading:
-		body = sMuted.Render(" lettura in corso…")
+		body = sMuted.Render(" " + T("reading…"))
 	default:
 		items := b.items()
 		h := max(m.h-14, 3)
@@ -654,34 +656,45 @@ func (m *Model) viewBrowser(w int) string {
 		if b.err != "" {
 			body += "\n\n" + sErr.Render(trunc(" "+b.err, w-4))
 		} else if len(b.dirs) == 0 {
-			body += "\n" + sMuted.Render(" (nessuna sottocartella)")
+			body += "\n" + sMuted.Render(" ("+T("no subfolders")+")")
 		}
 	}
 	return sFocusBox.Width(w).Render(sTitle.Render(title) + "\n" + path + "\n\n" + body + "\n\n" +
-		renderHelp("invio apri/seleziona · ← su di un livello · s usa cartella corrente · esc annulla", w))
+		renderHelp(T("enter open/select · ← up one level · s use current folder · esc cancel"), w))
 }
 
-var weekdays = []string{"dom", "lun", "mar", "mer", "gio", "ven", "sab"}
-
-// fmtClock formatta l'ora del server, es. "lun 05/10/2026 14:32:07 CEST".
+// fmtClock formats the server time, e.g. "Mon 2026-10-05 14:32:07 CEST".
 func fmtClock(t time.Time, zone string) string {
-	s := weekdays[t.Weekday()] + " " + t.Format("02/01/2006 15:04:05")
+	s := config.DayName(int(t.Weekday())) + " " + t.Format(i18n.DateTimeLayout())
 	if zone != "" {
 		s += " " + zone
 	}
 	return s
 }
 
-// fmtUntil descrive quanto manca a un'esecuzione, es. "tra 2h 15m".
+// fmtUntil describes how long until a run, e.g. "in 2h 15m".
 func fmtUntil(d time.Duration) string {
 	switch {
 	case d < time.Minute:
-		return "tra meno di un minuto"
+		return T("in less than a minute")
 	case d < time.Hour:
-		return fmt.Sprintf("tra %d min", int(d.Minutes()))
+		return Tf("in %d min", int(d.Minutes()))
 	case d < 24*time.Hour:
-		return fmt.Sprintf("tra %dh %02dm", int(d.Hours()), int(d.Minutes())%60)
+		return Tf("in %dh %02dm", int(d.Hours()), int(d.Minutes())%60)
 	}
 	days := int(d.Hours()) / 24
-	return fmt.Sprintf("tra %d g %dh", days, int(d.Hours())%24)
+	return Tf("in %d d %dh", days, int(d.Hours())%24)
+}
+
+// viewLanguages is the language selector next to the clock (clickable, or key L).
+func (m *Model) viewLanguages() string {
+	var parts []string
+	for _, l := range i18n.Languages {
+		st := sTabOff.Padding(0)
+		if l.Code == i18n.Lang() {
+			st = sTabOn.Padding(0, 0)
+		}
+		parts = append(parts, zone.Mark("lang:"+l.Code, st.Render(strings.ToUpper(l.Code))))
+	}
+	return strings.Join(parts, sSep.Render("|"))
 }

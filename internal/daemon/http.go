@@ -19,6 +19,7 @@ import (
 
 	"vegasyncor/internal/api"
 	"vegasyncor/internal/config"
+	"vegasyncor/internal/i18n"
 	"vegasyncor/internal/mount"
 	"vegasyncor/internal/paths"
 )
@@ -33,7 +34,7 @@ func (d *Daemon) serveAPI() (*http.Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	// accesso: root e (se esiste) il gruppo "vegasyncor"
+	// access: root and (if it exists) the "vegasyncor" group
 	mode := os.FileMode(0o600)
 	if g, err := user.LookupGroup("vegasyncor"); err == nil {
 		if gid, err := strconv.Atoi(g.Gid); err == nil && os.Chown(sock, -1, gid) == nil {
@@ -46,6 +47,7 @@ func (d *Daemon) serveAPI() (*http.Server, error) {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) { reply(w, d.status()) })
+	mux.HandleFunc("POST /api/settings", d.handleSettings)
 
 	mux.HandleFunc("POST /api/jobs", d.handleSaveJob)
 	mux.HandleFunc("PUT /api/jobs/{id}", d.handleSaveJob)
@@ -66,7 +68,7 @@ func (d *Daemon) serveAPI() (*http.Server, error) {
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {
 		if err := srv.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.Error("API", "errore", err)
+			slog.Error("API", "error", err)
 		}
 	}()
 	return srv, nil
@@ -87,11 +89,11 @@ func decode(r *http.Request, v any) error {
 	return json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(v)
 }
 
-// saveConfigLocked salva la configurazione; in caso di errore ripristina quella precedente.
+// saveConfigLocked saves the configuration; on error it restores the previous one.
 func (d *Daemon) saveConfigLocked(prev *config.Config) error {
 	if err := d.cfg.Save(paths.ConfigFile()); err != nil {
 		d.cfg = prev
-		return fmt.Errorf("salvataggio configurazione: %w", err)
+		return fmt.Errorf(T("saving the configuration: %w"), err)
 	}
 	return nil
 }
@@ -101,6 +103,31 @@ func cloneConfig(c *config.Config) *config.Config {
 	cp.Connections = append([]config.Connection(nil), c.Connections...)
 	cp.Jobs = append([]config.Job(nil), c.Jobs...)
 	return &cp
+}
+
+// --- settings ---
+
+func (d *Daemon) handleSettings(w http.ResponseWriter, r *http.Request) {
+	var in api.Settings
+	if err := decode(r, &in); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if !i18n.Supported(in.Language) {
+		fail(w, 400, errors.New(Tf("unsupported language: %s", in.Language)))
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	prev := cloneConfig(d.cfg)
+	d.cfg.Language = in.Language
+	if err := d.saveConfigLocked(prev); err != nil {
+		fail(w, 500, err)
+		return
+	}
+	i18n.SetLang(in.Language)
+	slog.Info("language changed", "language", in.Language)
+	reply(w, map[string]bool{"ok": true})
 }
 
 // --- job ---
@@ -117,7 +144,7 @@ func (d *Daemon) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 	if id := r.PathValue("id"); id != "" {
 		j.ID = id
 		if d.cfg.Job(id) == nil {
-			fail(w, 404, errors.New("job non trovato"))
+			fail(w, 404, errors.New(T("job not found")))
 			return
 		}
 	} else {
@@ -129,7 +156,7 @@ func (d *Daemon) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, o := range d.cfg.Jobs {
 		if o.ID != j.ID && strings.EqualFold(o.Name, j.Name) {
-			fail(w, 400, errors.New("esiste già un job con questo nome"))
+			fail(w, 400, errors.New(T("a job with this name already exists")))
 			return
 		}
 	}
@@ -142,8 +169,8 @@ func (d *Daemon) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err)
 		return
 	}
-	delete(d.next, j.ID) // ricalcola la prossima esecuzione
-	slog.Info("job salvato", "job", j.Name, "id", j.ID)
+	delete(d.next, j.ID) // recompute the next run
+	slog.Info("job saved", "job", j.Name, "id", j.ID)
 	reply(w, j)
 }
 
@@ -152,7 +179,7 @@ func (d *Daemon) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if _, busy := d.running[id]; busy {
-		fail(w, 409, errors.New("il job è in esecuzione: annullarlo prima di eliminarlo"))
+		fail(w, 409, errors.New(T("the job is running: stop it before deleting it")))
 		return
 	}
 	prev := cloneConfig(d.cfg)
@@ -163,7 +190,7 @@ func (d *Daemon) handleDeleteJob(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if len(out) == len(d.cfg.Jobs) {
-		fail(w, 404, errors.New("job non trovato"))
+		fail(w, 404, errors.New(T("job not found")))
 		return
 	}
 	d.cfg.Jobs = out
@@ -188,7 +215,7 @@ func (d *Daemon) handleEnableJob(w http.ResponseWriter, r *http.Request) {
 	prev := cloneConfig(d.cfg)
 	j := d.cfg.Job(r.PathValue("id"))
 	if j == nil {
-		fail(w, 404, errors.New("job non trovato"))
+		fail(w, 404, errors.New(T("job not found")))
 		return
 	}
 	j.Enabled = in.Enabled
@@ -205,10 +232,10 @@ func (d *Daemon) handleRunJob(w http.ResponseWriter, r *http.Request) {
 	defer d.mu.Unlock()
 	j := d.cfg.Job(r.PathValue("id"))
 	if j == nil {
-		fail(w, 404, errors.New("job non trovato"))
+		fail(w, 404, errors.New(T("job not found")))
 		return
 	}
-	run, err := d.startLocked(*j, r.URL.Query().Get("dry") == "1", "manuale")
+	run, err := d.startLocked(*j, r.URL.Query().Get("dry") == "1", api.TriggerManual)
 	if err != nil {
 		fail(w, 409, err)
 		return
@@ -221,15 +248,15 @@ func (d *Daemon) handleCancelJob(w http.ResponseWriter, r *http.Request) {
 	defer d.mu.Unlock()
 	rj, ok := d.running[r.PathValue("id")]
 	if !ok {
-		fail(w, 409, errors.New("il job non è in esecuzione"))
+		fail(w, 409, errors.New(T("the job is not running")))
 		return
 	}
-	rj.run.Phase = "annullamento…"
+	rj.run.Phase = T("cancelling…")
 	rj.cancel()
 	reply(w, map[string]bool{"ok": true})
 }
 
-// --- connessioni ---
+// --- connections ---
 
 func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 	var in api.ConnectionInput
@@ -244,7 +271,7 @@ func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 	var existing *config.Connection
 	if id := r.PathValue("id"); id != "" {
 		if existing = d.cfg.Connection(id); existing == nil {
-			fail(w, 404, errors.New("connessione non trovata"))
+			fail(w, 404, errors.New(T("connection not found")))
 			return
 		}
 		c.ID = id
@@ -259,7 +286,7 @@ func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 	}
 	if in.Password != "" {
 		if strings.ContainsAny(in.Password, "\r\n") {
-			fail(w, 400, errors.New("la password non può contenere a capo"))
+			fail(w, 400, errors.New(T("the password cannot contain line breaks")))
 			return
 		}
 		enc, err := d.box.Encrypt(in.Password, c.ID)
@@ -278,7 +305,7 @@ func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err)
 		return
 	}
-	slog.Info("connessione salvata", "nome", c.Name, "host", c.Host, "utente", c.Username)
+	slog.Info("connection saved", "name", c.Name, "host", c.Host, "user", c.Username)
 	reply(w, viewConn(c))
 }
 
@@ -288,7 +315,7 @@ func (d *Daemon) handleDeleteConn(w http.ResponseWriter, r *http.Request) {
 	defer d.mu.Unlock()
 	for _, j := range d.cfg.Jobs {
 		if j.Source.ConnectionID == id || j.Dest.ConnectionID == id {
-			fail(w, 409, fmt.Errorf("connessione usata dal job %q", j.Name))
+			fail(w, 409, errors.New(Tf("connection used by the job %q", j.Name)))
 			return
 		}
 	}
@@ -313,7 +340,7 @@ func (d *Daemon) handleTestConn(w http.ResponseWriter, r *http.Request) {
 	d.mu.Unlock()
 	id := r.PathValue("id")
 	if cfg.Connection(id) == nil {
-		fail(w, 404, errors.New("connessione non trovata"))
+		fail(w, 404, errors.New(T("connection not found")))
 		return
 	}
 	t, err := d.smbTarget(cfg, config.Location{Type: config.LocSMB, ConnectionID: id})
@@ -327,10 +354,10 @@ func (d *Daemon) handleTestConn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reply(w, api.TestResult{OK: true, Shares: shares,
-		Message: fmt.Sprintf("accesso riuscito: %d condivisioni trovate", len(shares))})
+		Message: Tf("access granted: %d shares found", len(shares))})
 }
 
-// --- sfoglia ---
+// --- browse ---
 
 func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	var in api.BrowseRequest
@@ -347,7 +374,7 @@ func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		}
 		dir = filepath.Clean(loc.Path)
 		if !filepath.IsAbs(dir) {
-			fail(w, 400, errors.New("percorso non assoluto"))
+			fail(w, 400, errors.New(T("path is not absolute")))
 			return
 		}
 	case config.LocSMB:
@@ -375,12 +402,12 @@ func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		defer m.Unmount()
 		dir = filepath.Join(m.Point, loc.Path)
 	default:
-		fail(w, 400, errors.New("tipo non valido"))
+		fail(w, 400, errors.New(T("invalid type")))
 		return
 	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		fail(w, 400, fmt.Errorf("lettura cartella: %w", err))
+		fail(w, 400, fmt.Errorf(T("reading folder: %w"), err))
 		return
 	}
 	resp := api.BrowseResponse{Path: loc.Path, Dirs: []string{}}
@@ -399,7 +426,7 @@ func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	reply(w, resp)
 }
 
-// --- storico e log ---
+// --- history and logs ---
 
 func (d *Daemon) handleHistory(w http.ResponseWriter, r *http.Request) {
 	job := r.URL.Query().Get("job")
@@ -421,7 +448,7 @@ func (d *Daemon) handleHistory(w http.ResponseWriter, r *http.Request) {
 func (d *Daemon) handleLog(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
-		fail(w, 400, errors.New("id non valido"))
+		fail(w, 400, errors.New(T("invalid id")))
 		return
 	}
 	max, _ := strconv.Atoi(r.URL.Query().Get("max"))
@@ -430,7 +457,7 @@ func (d *Daemon) handleLog(w http.ResponseWriter, r *http.Request) {
 	}
 	f, err := os.Open(logPath(id))
 	if err != nil {
-		fail(w, 404, errors.New("log non disponibile"))
+		fail(w, 404, errors.New(T("log not available")))
 		return
 	}
 	defer f.Close()
@@ -438,7 +465,7 @@ func (d *Daemon) handleLog(w http.ResponseWriter, r *http.Request) {
 	prefix := ""
 	if st != nil && st.Size() > int64(max) {
 		f.Seek(st.Size()-int64(max), io.SeekStart)
-		prefix = "… (log troncato, vengono mostrate solo le ultime righe)\n"
+		prefix = T("… (log truncated, only the last lines are shown)") + "\n"
 	}
 	b, _ := io.ReadAll(f)
 	reply(w, map[string]string{"log": prefix + string(b)})

@@ -1,13 +1,13 @@
 #!/bin/sh
-# Compila i binari statici e crea i pacchetti .deb.
-# Uso: packaging/build-deb.sh <versione> [architetture...]   es. packaging/build-deb.sh 0.1.0 amd64 arm64
+# Builds the static binaries and creates the .deb packages.
+# Usage: packaging/build-deb.sh <version> [architectures...]   e.g. packaging/build-deb.sh 0.3.0 amd64 arm64
 set -e
 cd "$(dirname "$0")/.."
-VERSION=${1:?specificare la versione}; shift
+VERSION=${1:?specify the version}; shift
 VERSION=${VERSION#v}
 ARCHS=${*:-amd64 arm64}
-# Versione Debian: le pre-release (0.2.0-rc1) usano "~" per risultare precedenti a 0.2.0,
-# le build di sviluppo (0.1.0-3-gabc123) usano "+" per risultare successive a 0.1.0.
+# Debian version: pre-releases (0.2.0-rc1) use "~" so they sort before 0.2.0,
+# development builds (0.1.0-3-gabc123) use "+" so they sort after 0.1.0.
 DEB_VERSION=$(echo "$VERSION" | sed -E 's/-(rc|beta|alpha)/~\1/; s/-/+/g; s/^([^0-9])/0.0.0+\1/')
 GO=${GO:-go}
 mkdir -p dist
@@ -32,11 +32,11 @@ Installed-Size: $SIZE
 Depends: rsync, cifs-utils
 Recommends: smbclient
 Maintainer: VegaSyncor <root@localhost>
-Description: sincronizzazione pianificata di cartelle di rete per backup
- Servizio e interfaccia testuale (TUI) per copiare periodicamente
- cartelle condivise SMB/CIFS (Windows, Samba) su un server di backup.
+Description: scheduled sync of network folders for backup
+ Service and text-based interface (TUI) to periodically copy
+ SMB/CIFS shared folders (Windows, Samba) to a backup server.
 CTRL
     dpkg-deb --root-owner-group --build "$R" "dist/vegasyncor_${VERSION}_$a.deb" >/dev/null
     rm -rf "$R"
-    echo "→ dist/vegasyncor_${VERSION}_$a.deb (versione Debian $DEB_VERSION)"
+    echo "→ dist/vegasyncor_${VERSION}_$a.deb (Debian version $DEB_VERSION)"
 done

@@ -12,7 +12,7 @@ func TestCleanOutput(t *testing.T) {
 		t.Fatalf("cleanOutput = %q", got)
 	}
 	if e := explainMountError(got); !strings.Contains(e, "→") {
-		t.Errorf("manca il suggerimento: %q", e)
+		t.Errorf("hint missing: %q", e)
 	}
 }
 

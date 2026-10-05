@@ -1,0 +1,63 @@
+package i18n
+
+func init() {
+	addItalian(map[string]string{
+		// scheduler and runs
+		"skipped: the previous run was still in progress": "saltato: l'esecuzione precedente era ancora in corso",
+		"the job is already running":                      "il job è già in esecuzione",
+		"queued":                                          "in coda",
+		"cancelled before starting":                       "annullato prima dell'avvio",
+		"interrupted: the service stopped during the copy (reboot or shutdown)": "interrotta: il servizio si è arrestato durante la copia (riavvio o spegnimento)",
+		"connection %q not found": "connessione %q non trovata",
+		"connection":              "connessione",
+
+		// runner
+		"folder %s not accessible: %w":   "cartella %s non accessibile: %w",
+		"%s is not a folder":             "%s non è una cartella",
+		"unknown location type":          "tipo di posizione sconosciuto",
+		"cancelled during: %s":           "annullato durante: %s",
+		"cancelled":                      "annullato",
+		"ERROR (%s): %v":                 "ERRORE (%s): %v",
+		"real run":                       "esecuzione reale",
+		"DRY RUN":                        "SIMULAZIONE",
+		"read-only":                      "sola lettura",
+		"Source:      %s":                "Sorgente:     %s",
+		"Destination: %s":                "Destinazione: %s",
+		"connecting to source":           "connessione sorgente",
+		"warning: unmounting source: %v": "attenzione: smontaggio sorgente: %v",
+		"the folder %s does not exist in the share": "la cartella %s non esiste nella condivisione",
+		"safety check": "controllo sicurezza",
+		"the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)": "la sorgente è vuota: mirror bloccato per non svuotare la destinazione (abilitare 'Consenti sorgente vuota' se voluto)",
+		"connecting to destination":                      "connessione destinazione",
+		"warning: unmounting destination: %v":            "attenzione: smontaggio destinazione: %v",
+		"synchronizing":                                  "sincronizzazione",
+		"cancelled by the user":                          "annullato dall'utente",
+		"cleaning up the archive":                        "pulizia archivio",
+		"warning: archive cleanup: %v":                   "attenzione: pulizia archivio: %v",
+		"archive: removed %d folders older than %d days": "archivio: rimosse %d cartelle più vecchie di %d giorni",
+		"dry run: %d files to copy (%s), %d to delete":   "simulazione: %d file da copiare (%s), %d da cancellare",
+		"dry run: %d files to copy (%s)":                 "simulazione: %d file da copiare (%s)",
+		"%d files copied (%s), %d deleted":               "%d file copiati (%s), %d cancellati",
+		"%d files copied (%s)":                           "%d file copiati (%s)",
+		"Finished: %s":                                   "Concluso: %s",
+		"WARNING: %s":                                    "ATTENZIONE: %s",
+
+		// API
+		"saving the configuration: %w":                     "salvataggio configurazione: %w",
+		"unsupported language: %s":                         "lingua non supportata: %s",
+		"job not found":                                    "job non trovato",
+		"a job with this name already exists":              "esiste già un job con questo nome",
+		"the job is running: stop it before deleting it":   "il job è in esecuzione: annullarlo prima di eliminarlo",
+		"the job is not running":                           "il job non è in esecuzione",
+		"cancelling…":                                      "annullamento…",
+		"connection not found":                             "connessione non trovata",
+		"connection used by the job %q":                    "connessione usata dal job %q",
+		"access granted: %d shares found":                  "accesso riuscito: %d condivisioni trovate",
+		"path is not absolute":                             "percorso non assoluto",
+		"invalid type":                                     "tipo non valido",
+		"reading folder: %w":                               "lettura cartella: %w",
+		"invalid id":                                       "id non valido",
+		"log not available":                                "log non disponibile",
+		"… (log truncated, only the last lines are shown)": "… (log troncato, vengono mostrate solo le ultime righe)",
+	})
+}

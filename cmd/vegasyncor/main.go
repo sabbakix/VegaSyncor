@@ -1,8 +1,9 @@
-// VegaSyncor: sincronizzazione pianificata di cartelle di rete (SMB/CIFS) per backup.
+// VegaSyncor: scheduled sync of network folders (SMB/CIFS) for backup.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -13,7 +14,9 @@ import (
 	"time"
 
 	"vegasyncor/internal/api"
+	"vegasyncor/internal/config"
 	"vegasyncor/internal/daemon"
+	"vegasyncor/internal/i18n"
 	"vegasyncor/internal/mount"
 	"vegasyncor/internal/paths"
 	"vegasyncor/internal/tui"
@@ -21,20 +24,23 @@ import (
 
 var version = "dev"
 
-const usage = `VegaSyncor %s – sincronizzazione di cartelle di rete per backup
+const usage = `VegaSyncor %s – sync of network folders for backup
 
-Uso:
-  vegasyncor                 apre l'interfaccia di gestione (TUI)
-  vegasyncor --no-mouse      apre la TUI senza supporto del mouse
-  vegasyncor daemon          avvia il servizio (normalmente tramite systemd)
-  vegasyncor status          mostra lo stato dei job
-  vegasyncor check           verifica che il sistema possa montare le condivisioni SMB
-  vegasyncor run <job>       avvia subito un job (nome o ID)
-  vegasyncor dry-run <job>   simula un job senza modificare nulla
-  vegasyncor version         mostra la versione
+Usage:
+  vegasyncor                 opens the management interface (TUI)
+  vegasyncor --no-mouse      opens the TUI without mouse support
+  vegasyncor daemon          starts the service (normally through systemd)
+  vegasyncor status          shows the status of the jobs
+  vegasyncor check           checks that the system can mount SMB shares
+  vegasyncor run <job>       runs a job now (name or ID)
+  vegasyncor dry-run <job>   simulates a job without changing anything
+  vegasyncor version         shows the version
+
+The language follows the service setting; VEGASYNCOR_LANG=en|it overrides it.
 `
 
 func main() {
+	initLanguage()
 	cmd := "tui"
 	if len(os.Args) > 1 {
 		cmd = os.Args[1]
@@ -52,21 +58,40 @@ func main() {
 		os.Exit(runCheck())
 	case "run", "dry-run":
 		if len(os.Args) < 3 {
-			err = fmt.Errorf("specificare il job")
+			err = errors.New(T("specify the job"))
 		} else {
 			err = runJob(os.Args[2], cmd == "dry-run")
 		}
 	case "version", "--version", "-v":
 		fmt.Println("vegasyncor", version)
 	case "help", "--help", "-h":
-		fmt.Printf(usage, version)
+		fmt.Printf(T(usage), version)
 	default:
-		fmt.Fprintf(os.Stderr, usage, version)
+		fmt.Fprintf(os.Stderr, T(usage), version)
 		os.Exit(2)
 	}
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "errore:", err)
+		fmt.Fprintln(os.Stderr, T("error:"), err)
 		os.Exit(1)
+	}
+}
+
+// initLanguage picks the language before contacting the service:
+// VEGASYNCOR_LANG, otherwise the configuration (if readable), otherwise English.
+func initLanguage() {
+	if env := i18n.FromEnv(); env != "" {
+		i18n.SetLang(env)
+		return
+	}
+	if cfg, err := config.Load(paths.ConfigFile()); err == nil {
+		i18n.SetLang(cfg.Language)
+	}
+}
+
+// followService uses the language of the service, unless VEGASYNCOR_LANG is set.
+func followService(st *api.Status) {
+	if i18n.FromEnv() == "" && st.Language != "" {
+		i18n.SetLang(st.Language)
 	}
 }
 
@@ -74,7 +99,7 @@ func runDaemon() error {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 		ReplaceAttr: func(_ []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.TimeKey && os.Getenv("JOURNAL_STREAM") != "" {
-				return slog.Attr{} // journald aggiunge già data e ora
+				return slog.Attr{} // journald already adds date and time
 			}
 			return a
 		},
@@ -93,12 +118,13 @@ func findJob(c *api.Client, ref string) (*api.JobStatus, error) {
 	if err != nil {
 		return nil, err
 	}
+	followService(st)
 	for i, j := range st.Jobs {
 		if j.Job.ID == ref || j.Job.Name == ref {
 			return &st.Jobs[i], nil
 		}
 	}
-	return nil, fmt.Errorf("job %q non trovato", ref)
+	return nil, errors.New(Tf("job %q not found", ref))
 }
 
 func runJob(ref string, dry bool) error {
@@ -110,7 +136,7 @@ func runJob(ref string, dry bool) error {
 	if err := c.RunJob(j.Job.ID, dry); err != nil {
 		return err
 	}
-	fmt.Printf("Job %q avviato. Avanzamento:\n", j.Job.Name)
+	fmt.Println(Tf("Job %q started. Progress:", j.Job.Name))
 	for {
 		time.Sleep(time.Second)
 		cur, err := findJob(c, j.Job.ID)
@@ -119,7 +145,7 @@ func runJob(ref string, dry bool) error {
 		}
 		if cur.Current == nil {
 			if cur.Last != nil {
-				fmt.Printf("\rEsito: %s – %s\n", cur.Last.Status, cur.Last.Message)
+				fmt.Printf("\r%s\n", Tf("Result: %s – %s", statusText(cur.Last.Status), cur.Last.Message))
 				if cur.Last.Status == api.StatusError {
 					os.Exit(1)
 				}
@@ -134,55 +160,75 @@ func runJob(ref string, dry bool) error {
 	}
 }
 
+func statusText(s string) string {
+	switch s {
+	case api.StatusOK:
+		return T("completed")
+	case api.StatusWarning:
+		return T("with warnings")
+	case api.StatusError:
+		return T("error")
+	case api.StatusCancelled:
+		return T("cancelled")
+	case api.StatusSkipped:
+		return T("skipped")
+	case api.StatusRunning:
+		return T("running")
+	}
+	return s
+}
+
 func printStatus() error {
 	st, err := api.NewClient(paths.Socket()).Status()
 	if err != nil {
 		return err
 	}
+	followService(st)
 	for _, w := range st.Warnings {
-		fmt.Printf("ATTENZIONE: %s\n\n", w)
+		fmt.Printf("%s %s\n\n", T("WARNING:"), w)
 	}
 	zone := st.ZoneAbbr
 	if st.ZoneName != "" && st.ZoneName != st.ZoneAbbr {
 		zone = st.ZoneName + " " + st.ZoneAbbr
 	}
-	fmt.Printf("Ora del server: %s (%s)\n\n", st.ServerTime.Format("02/01/2006 15:04:05"), zone)
+	fmt.Printf("%s %s (%s)\n\n", T("Server time:"), st.ServerTime.Format(i18n.DateTimeLayout()), zone)
+	short := i18n.ShortDateTimeLayout()
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
-	fmt.Fprintln(tw, "JOB\tSTATO\tULTIMA\tESITO\tPROSSIMA")
+	fmt.Fprintln(tw, strings.Join([]string{T("JOB"), T("STATE"), T("LAST"), T("RESULT"), T("NEXT")}, "\t"))
 	for _, j := range st.Jobs {
-		state := "attivo"
+		state := T("active")
 		if !j.Job.Enabled {
-			state = "sospeso"
+			state = T("paused")
 		}
 		if j.Current != nil {
-			state = "in corso"
+			state = T("running")
 		}
 		last, res := "-", "-"
 		if j.Last != nil {
-			last = j.Last.Start.Format("02/01 15:04")
-			res = j.Last.Status
+			last = j.Last.Start.Format(short)
+			res = statusText(j.Last.Status)
 		}
 		next := "-"
 		if !j.Next.IsZero() {
-			next = j.Next.Format("02/01 15:04")
+			next = j.Next.Format(short)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", j.Job.Name, state, last, res, next)
 	}
 	return tw.Flush()
 }
 
-// runCheck stampa la diagnostica dell'ambiente; restituisce 1 se ci sono problemi bloccanti.
+// runCheck prints the environment diagnostics; returns 1 if there are blocking problems.
 func runCheck() int {
-	fmt.Println("Verifica dell'ambiente VegaSyncor")
+	fmt.Println(T("VegaSyncor environment check"))
 	fmt.Println()
 	code := 0
 	for _, c := range mount.Diagnose() {
 		icon := "  OK   "
 		switch c.Level {
 		case mount.CheckWarn:
-			icon = "  AVV. "
+			icon = "  " + T("WARN") + " "
 		case mount.CheckFail:
-			icon = "  ERR. "
+			icon = "  " + T("ERR.") + " "
 			code = 1
 		}
 		fmt.Printf("%s %s\n", icon, c.Name)
@@ -194,9 +240,9 @@ func runCheck() int {
 	}
 	fmt.Println()
 	if code == 0 {
-		fmt.Println("Il sistema può eseguire le sincronizzazioni.")
+		fmt.Println(T("The system can run the syncs."))
 	} else {
-		fmt.Println("Ci sono problemi da risolvere: le sincronizzazioni con cartelle di rete non funzioneranno.")
+		fmt.Println(T("There are problems to fix: syncs with network folders will not work."))
 	}
 	return code
 }

@@ -1,39 +1,39 @@
 #!/bin/sh
-# Installazione di VegaSyncor senza pacchetto .deb.
-# Uso: sudo ./install.sh [percorso-binario]   (default: bin/vegasyncor)
+# Installs VegaSyncor without the .deb package.
+# Usage: sudo ./install.sh [binary-path]   (default: bin/vegasyncor)
 set -e
 BIN=${1:-bin/vegasyncor}
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "Eseguire come root: sudo $0" >&2
+    echo "Run as root: sudo $0" >&2
     exit 1
 fi
 if [ ! -x "$BIN" ]; then
-    echo "Binario $BIN non trovato: eseguire prima 'make build'" >&2
+    echo "Binary $BIN not found: run 'make build' first" >&2
     exit 1
 fi
 
-echo "→ installazione dipendenze (rsync, cifs-utils, smbclient)"
+echo "→ installing dependencies (rsync, cifs-utils, smbclient)"
 if command -v apt-get >/dev/null; then
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y -qq rsync cifs-utils smbclient
 else
-    echo "  apt-get non disponibile: installare a mano rsync, cifs-utils e smbclient"
+    echo "  apt-get not available: install rsync, cifs-utils and smbclient manually"
 fi
 
-echo "→ copia del programma in /usr/bin/vegasyncor"
+echo "→ copying the program to /usr/bin/vegasyncor"
 install -m 755 "$BIN" /usr/bin/vegasyncor
 install -D -m 644 "$HERE/packaging/vegasyncor.service" /lib/systemd/system/vegasyncor.service
 
 getent group vegasyncor >/dev/null || addgroup --system vegasyncor >/dev/null
 
-echo "→ avvio del servizio"
+echo "→ starting the service"
 systemctl daemon-reload
 systemctl enable --now vegasyncor.service
 systemctl restart vegasyncor.service
 
-# verifica che l'ambiente possa montare le condivisioni SMB (es. container non privilegiato)
+# check that the environment can mount SMB shares (e.g. unprivileged container)
 if ! CHECK=$(/usr/bin/vegasyncor check 2>&1); then
     echo
     echo "############################################################"
@@ -43,12 +43,12 @@ fi
 
 cat <<MSG
 
-VegaSyncor installato e avviato.
+VegaSyncor installed and started.
 
-  Gestione:          sudo vegasyncor
-  Stato rapido:      sudo vegasyncor status
-  Log del servizio:  journalctl -u vegasyncor -f
+  Management:   sudo vegasyncor
+  Quick status: sudo vegasyncor status
+  Service log:  journalctl -u vegasyncor -f
 
-IMPORTANTE: fare una copia di /etc/vegasyncor/master.key in un luogo sicuro:
-senza questa chiave le password salvate non sono più leggibili.
+IMPORTANT: keep a copy of /etc/vegasyncor/master.key in a safe place:
+without this key the saved passwords can no longer be read.
 MSG

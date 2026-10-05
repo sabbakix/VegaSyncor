@@ -7,9 +7,9 @@ import (
 	"vegasyncor/internal/config"
 )
 
-// browser permette di scegliere una cartella navigando (locale o su condivisione).
+// browser lets the user choose a folder by navigating (local or on a share).
 type browser struct {
-	target  string // chiave del campo da compilare
+	target  string // key of the field to fill in
 	loc     config.Location
 	dirs    []string
 	cur     int
@@ -18,7 +18,7 @@ type browser struct {
 	err     string
 }
 
-// picker è un semplice elenco da cui scegliere un valore (es. condivisioni).
+// picker is a simple list to choose a value from (e.g. shares).
 type picker struct {
 	title  string
 	target string
@@ -34,9 +34,9 @@ func (b *browser) atRoot() bool {
 }
 
 func (b *browser) items() []string {
-	out := []string{"[ Usa questa cartella ]"}
+	out := []string{"[ " + T("Use this folder") + " ]"}
 	if !b.atRoot() {
-		out = append(out, ".. (cartella superiore)")
+		out = append(out, ".. ("+T("parent folder")+")")
 	}
 	for _, d := range b.dirs {
 		out = append(out, "   "+d+"/")
@@ -44,7 +44,7 @@ func (b *browser) items() []string {
 	return out
 }
 
-// child restituisce il percorso del figlio i-esimo della lista (o "" se non è una cartella).
+// child returns the path of the i-th child in the list (or "" if it is not a folder).
 func (b *browser) child(i int) (string, bool) {
 	idx := i - 1
 	if !b.atRoot() {

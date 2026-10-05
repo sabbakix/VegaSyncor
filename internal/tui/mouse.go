@@ -8,23 +8,24 @@ import (
 	zone "github.com/lrstanley/bubblezone"
 
 	"vegasyncor/internal/config"
+	"vegasyncor/internal/i18n"
 )
 
-// Supporto del mouse: le parti cliccabili vengono marcate con zone.Mark durante il
-// disegno; qui i clic vengono tradotti negli stessi tasti usati da tastiera, così il
-// comportamento resta identico.
+// Mouse support: the clickable parts are marked with zone.Mark while drawing;
+// here clicks are translated into the same keys used from the keyboard, so the
+// behaviour stays identical.
 
 const doubleClickTime = 450 * time.Millisecond
 
-// helpKeys sono i tasti mostrati nella barra dei comandi dell'ultima schermata
-// disegnata (cliccabili). Viene riempito da renderHelp.
+// helpKeys are the keys shown in the command bar of the last drawn screen
+// (clickable). It is filled by renderHelp.
 var helpKeys []string
 
-// keyForLabel traduce l'etichetta di un tasto mostrata nella barra dei comandi
-// nel tasto corrispondente; false se l'etichetta non è un'azione cliccabile.
+// keyForLabel translates the label of a key shown in the command bar into the
+// corresponding key (labels in any language); false if it is not a clickable action.
 func keyForLabel(label string) (tea.KeyMsg, bool) {
 	switch label {
-	case "invio":
+	case "enter", "invio":
 		return tea.KeyMsg{Type: tea.KeyEnter}, true
 	case "esc":
 		return tea.KeyMsg{Type: tea.KeyEsc}, true
@@ -32,7 +33,7 @@ func keyForLabel(label string) (tea.KeyMsg, bool) {
 		return tea.KeyMsg{Type: tea.KeyTab}, true
 	case "ctrl+s":
 		return tea.KeyMsg{Type: tea.KeyCtrlS}, true
-	case "spazio":
+	case "space", "spazio":
 		return tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}, true
 	case "←":
 		return tea.KeyMsg{Type: tea.KeyLeft}, true
@@ -60,13 +61,13 @@ func hit(id string, msg tea.MouseMsg) bool {
 	return z != nil && z.InBounds(msg)
 }
 
-// isDouble registra il clic su id e indica se è il secondo clic ravvicinato sulla stessa zona.
+// isDouble records a click on id and reports whether it is a quick second click on the same zone.
 func (m *Model) isDouble(id string) bool {
 	now := time.Now()
 	double := m.lastClick == id && now.Sub(m.lastClickAt) < doubleClickTime
 	m.lastClick, m.lastClickAt = id, now
 	if double {
-		m.lastClick = "" // un triplo clic non conta come secondo doppio clic
+		m.lastClick = "" // a triple click does not count as a second double click
 	}
 	return double
 }
@@ -94,7 +95,7 @@ func (m *Model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 }
 
 func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
-	// barra dei comandi (vale per ogni schermata, finestre comprese)
+	// command bar (valid on every screen, dialogs included)
 	for _, k := range helpKeys {
 		if hit("key:"+k, msg) {
 			if km, ok := keyForLabel(k); ok {
@@ -134,7 +135,12 @@ func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
 		return m.formClick(msg)
 	}
 
-	for i := range tabNames {
+	for _, l := range i18n.Languages {
+		if hit("lang:"+l.Code, msg) {
+			return m.setLanguage(l.Code)
+		}
+	}
+	for i := range tabNames() {
 		if hit(fmt.Sprintf("tab:%d", i), msg) {
 			return m.handleKey(keyNamed(fmt.Sprint(i + 1)))
 		}
@@ -142,7 +148,7 @@ func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
 	if m.st == nil {
 		return nil
 	}
-	// righe degli elenchi: clic = seleziona, doppio clic = apre
+	// list rows: click = select, double click = open
 	switch m.tab {
 	case tabJobs:
 		for i := range m.jobs() {
@@ -178,7 +184,7 @@ func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
 	return nil
 }
 
-// formClick: clic su un campo lo attiva; caselle, scelte e giorni cambiano valore.
+// formClick: a click on a field activates it; boxes, choices and days change value.
 func (m *Model) formClick(msg tea.MouseMsg) tea.Cmd {
 	fm := m.form
 	for i, f := range fm.Fields {

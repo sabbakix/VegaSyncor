@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -10,20 +9,20 @@ import (
 	"vegasyncor/internal/config"
 )
 
-// ---------- form job ----------
+// ---------- job form ----------
 
 func connOptions(conns []api.ConnectionView) []option {
 	if len(conns) == 0 {
-		return []option{{"", "(nessuna – crearla nella scheda Connessioni)"}}
+		return []option{{"", T("(none – create one in the Connections tab)")}}
 	}
 	out := make([]option, len(conns))
 	for i, c := range conns {
-		out[i] = option{c.ID, fmt.Sprintf("%s  (%s, utente %s)", c.Name, c.Host, c.Username)}
+		out[i] = option{c.ID, Tf("%s  (%s, user %s)", c.Name, c.Host, c.Username)}
 	}
 	return out
 }
 
-// zone è il fuso orario del server, mostrato accanto alla pianificazione.
+// zone is the server time zone, shown next to the schedule.
 func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 	isNew := j == nil
 	if isNew {
@@ -40,7 +39,7 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 			Schedule: config.Schedule{Type: config.SchedWeekly, Times: []string{"22:00"}, Days: []int{1, 2, 3, 4, 5}, EveryMinutes: 60},
 		}
 	}
-	locTypes := []option{{config.LocSMB, "Cartella di rete (SMB)"}, {config.LocLocal, "Cartella locale del server"}}
+	locTypes := []option{{config.LocSMB, T("Network folder (SMB)")}, {config.LocLocal, T("Local folder on this server")}}
 	var modes []option
 	for _, m := range config.Modes {
 		modes = append(modes, option{m, config.ModeLabel(m)})
@@ -77,65 +76,66 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		cron = "0 22 * * 1-5"
 	}
 
-	title := "Nuova sincronizzazione"
+	title := T("New sync")
 	if !isNew {
-		title = "Modifica: " + j.Name
+		title = T("Edit:") + " " + j.Name
 	}
 	fm := &form{Title: title, Fields: []*field{
-		section("Generale"),
-		newText("name", "Nome", j.Name, "es. Contabilità PC-Ufficio").withHelp("nome con cui la sincronizzazione compare negli elenchi e nei log"),
-		newBool("enabled", "Attivo", j.Enabled).withHelp("se disattivato, il job non parte da pianificazione (resta avviabile a mano)"),
+		section(T("General")),
+		newText("name", T("Name"), j.Name, T("e.g. Accounting Office-PC")).withHelp(T("name shown for this sync in the lists and logs")),
+		newBool("enabled", T("Active"), j.Enabled).withHelp(T("when off, the job does not run on schedule (it can still be started manually)")),
 
-		section("1. Sorgente – da dove copiare"),
-		newChoice("src_type", "Tipo", locTypes, j.Source.Type).withHelp("cartella condivisa di un PC/server in rete oppure cartella di questo server"),
-		newChoice("src_conn", "Connessione", connOptions(conns), j.Source.ConnectionID).when(isSMB("src_type")).
-			withHelp("PC o server da cui leggere, con le credenziali salvate nella scheda Connessioni"),
-		newText("src_share", "Condivisione", j.Source.Share, "es. Documenti").browsable().when(isSMB("src_type")).
-			withHelp("nome della cartella condivisa sul PC/server (Invio per elencarle)"),
-		newText("src_path", "Sottocartella", j.Source.Path, "vuoto = tutta la condivisione").browsable().labeled(pathLabel("src")).
-			withHelp("Invio per sfogliare le cartelle"),
-		newBool("src_ro", "Sola lettura", j.SourceRO).
-			withHelp("consigliato: la sorgente viene montata in sola lettura, impossibile modificarla o cancellarla"),
+		section(T("1. Source – where to copy from")),
+		newChoice("src_type", T("Type"), locTypes, j.Source.Type).withHelp(T("shared folder of a PC/server on the network, or a folder of this server")),
+		newChoice("src_conn", T("Connection"), connOptions(conns), j.Source.ConnectionID).when(isSMB("src_type")).
+			withHelp(T("PC or server to read from, with the credentials saved in the Connections tab")),
+		newText("src_share", T("Share"), j.Source.Share, T("e.g. Documents")).browsable().when(isSMB("src_type")).
+			withHelp(T("name of the shared folder on the PC/server (Enter to list them)")),
+		newText("src_path", T("Subfolder"), j.Source.Path, T("empty = the whole share")).browsable().labeled(pathLabel("src")).
+			withHelp(T("Enter to browse the folders")),
+		newBool("src_ro", T("Read-only"), j.SourceRO).
+			withHelp(T("recommended: the source is mounted read-only, it cannot be changed or deleted")),
 
-		section("2. Destinazione – dove salvare la copia"),
-		newChoice("dst_type", "Tipo", locTypes, j.Dest.Type).withHelp("dove salvare la copia: cartella di questo server (anche disco USB o NAS montato) o di rete"),
-		newChoice("dst_conn", "Connessione", connOptions(conns), j.Dest.ConnectionID).when(isSMB("dst_type")).
-			withHelp("PC, server o NAS su cui scrivere la copia"),
-		newText("dst_share", "Condivisione", j.Dest.Share, "es. Backup").browsable().when(isSMB("dst_type")).
-			withHelp("cartella condivisa di destinazione (Invio per elencarle)"),
-		newText("dst_path", "Cartella", j.Dest.Path, "vuoto = radice della condivisione").browsable().labeled(pathLabel("dst")).withHelp("Invio per sfogliare le cartelle"),
+		section(T("2. Destination – where to save the copy")),
+		newChoice("dst_type", T("Type"), locTypes, j.Dest.Type).withHelp(T("where to save the copy: a folder of this server (also a mounted USB disk or NAS) or a network folder")),
+		newChoice("dst_conn", T("Connection"), connOptions(conns), j.Dest.ConnectionID).when(isSMB("dst_type")).
+			withHelp(T("PC, server or NAS to write the copy to")),
+		newText("dst_share", T("Share"), j.Dest.Share, T("e.g. Backup")).browsable().when(isSMB("dst_type")).
+			withHelp(T("destination shared folder (Enter to list them)")),
+		newText("dst_path", T("Folder"), j.Dest.Path, T("empty = root of the share")).browsable().labeled(pathLabel("dst")).
+			withHelp(T("Enter to browse the folders")),
 
-		section("3. Modalità di copia"),
-		newChoice("mode", "Modalità", modes, j.Mode).helpFn(func(f *form) string { return config.ModeDescription(f.choice("mode")) }),
-		newText("archive_days", "Conserva archivio (gg)", arch, "vuoto = per sempre").
+		section(T("3. Copy mode")),
+		newChoice("mode", T("Mode"), modes, j.Mode).helpFn(func(f *form) string { return config.ModeDescription(f.choice("mode")) }),
+		newText("archive_days", T("Keep archive (days)"), arch, T("empty = forever")).
 			when(func(f *form) bool { return f.choice("mode") == config.ModeMirrorArchive }).
-			withHelp("le versioni archiviate più vecchie di N giorni vengono eliminate"),
-		newBool("allow_empty", "Consenti sorgente vuota", j.AllowEmptySource).
+			withHelp(T("archived versions older than N days are deleted")),
+		newBool("allow_empty", T("Allow empty source"), j.AllowEmptySource).
 			when(func(f *form) bool { return f.choice("mode") != config.ModeAdditive }).
-			withHelp("di norma un mirror con sorgente vuota viene bloccato per non svuotare il backup"),
-		newText("excludes", "Escludi", strings.Join(j.Excludes, ", "), "es. *.tmp, Cache/").
-			withHelp("modelli separati da virgola (Thumbs.db, desktop.ini, ~$* sono già esclusi)"),
-		newText("bwlimit", "Limite banda (KB/s)", bw, "vuoto = illimitata").
-			withHelp("velocità massima di copia, per non rallentare la rete (es. 5000 ≈ 40 Mbit/s); vuoto = nessun limite"),
+			withHelp(T("normally a mirror with an empty source is blocked so the backup is not wiped")),
+		newText("excludes", T("Exclude"), strings.Join(j.Excludes, ", "), T("e.g. *.tmp, Cache/")).
+			withHelp(T("comma-separated patterns (Thumbs.db, desktop.ini, ~$* are already excluded)")),
+		newText("bwlimit", T("Bandwidth limit (KB/s)"), bw, T("empty = unlimited")).
+			withHelp(T("maximum copy speed, so the network is not slowed down (e.g. 5000 ≈ 40 Mbit/s); empty = no limit")),
 
 		section(schedSection(zone)),
-		newChoice("sched", "Quando", scheds, j.Schedule.Type).helpFn(schedHelp),
-		newText("every", "Ogni (minuti)", every, "es. 30, 60, 240").when(sched(config.SchedInterval)).
-			withHelp("60 = ogni ora, 240 = ogni 4 ore"),
-		newText("win_from", "Fascia dalle", j.Schedule.WindowFrom, "facoltativo, es. 08:00").when(sched(config.SchedInterval)).
-			withHelp("esegue solo a partire da quest'ora (HH:MM); vuoto = tutto il giorno"),
-		newText("win_to", "Fascia alle", j.Schedule.WindowTo, "facoltativo, es. 19:00").when(sched(config.SchedInterval)).
-			withHelp("ultima esecuzione possibile (HH:MM); può anche essere dopo mezzanotte, es. 22:00 → 06:00"),
-		newText("times", "Orari", strings.Join(j.Schedule.Times, ", "), "es. 13:00, 22:30").
-			when(sched(config.SchedDaily, config.SchedWeekly)).withHelp("uno o più orari separati da virgola"),
-		newDays("days", "Giorni", j.Schedule.Days).helpFn(func(f *form) string {
+		newChoice("sched", T("When"), scheds, j.Schedule.Type).helpFn(schedHelp),
+		newText("every", T("Every (minutes)"), every, T("e.g. 30, 60, 240")).when(sched(config.SchedInterval)).
+			withHelp(T("60 = every hour, 240 = every 4 hours")),
+		newText("win_from", T("Window from"), j.Schedule.WindowFrom, T("optional, e.g. 08:00")).when(sched(config.SchedInterval)).
+			withHelp(T("runs only from this time (HH:MM); empty = all day")),
+		newText("win_to", T("Window to"), j.Schedule.WindowTo, T("optional, e.g. 19:00")).when(sched(config.SchedInterval)).
+			withHelp(T("last possible run (HH:MM); it can also be after midnight, e.g. 22:00 → 06:00")),
+		newText("times", T("Times"), strings.Join(j.Schedule.Times, ", "), T("e.g. 13:00, 22:30")).
+			when(sched(config.SchedDaily, config.SchedWeekly)).withHelp(T("one or more comma-separated times")),
+		newDays("days", T("Days"), j.Schedule.Days).helpFn(func(f *form) string {
 			if f.choice("sched") == config.SchedInterval {
-				return "giorni in cui ripetere la copia; nessun giorno selezionato = tutti i giorni"
+				return T("days on which to repeat the copy; no day selected = every day")
 			}
-			return "giorni della settimana in cui eseguire la copia"
+			return T("days of the week on which to run the copy")
 		}).when(sched(config.SchedWeekly, config.SchedInterval)),
-		newText("cron", "Espressione cron", cron, "min ora giorno mese giorno-sett").when(sched(config.SchedCron)).
-			withHelp("es. \"0 */2 * * 1-5\" = ogni 2 ore, lun-ven"),
+		newText("cron", T("Cron expression"), cron, T("min hour day month weekday")).when(sched(config.SchedCron)).
+			withHelp(T("e.g. \"0 */2 * * 1-5\" = every 2 hours, Mon-Fri")),
 	}}
 	fm.init()
 	return fm
@@ -144,32 +144,32 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 func schedHelp(f *form) string {
 	switch f.choice("sched") {
 	case config.SchedInterval:
-		return "ripete la copia ogni N minuti, eventualmente solo in una fascia oraria e in certi giorni"
+		return T("repeats the copy every N minutes, optionally only in a time window and on certain days")
 	case config.SchedDaily:
-		return "esegue ogni giorno agli orari indicati"
+		return T("runs every day at the given times")
 	case config.SchedWeekly:
-		return "esegue agli orari indicati, solo nei giorni selezionati"
+		return T("runs at the given times, only on the selected days")
 	case config.SchedCron:
-		return "pianificazione avanzata con un'espressione cron a 5 campi"
+		return T("advanced schedule with a 5-field cron expression")
 	case config.SchedManual:
-		return "nessuna esecuzione automatica: si avvia solo a mano (tasto r)"
+		return T("no automatic runs: it is only started manually (key r)")
 	}
 	return ""
 }
 
 func schedSection(zone string) string {
 	if zone == "" {
-		return "4. Pianificazione – orari del server"
+		return T("4. Schedule – server time")
 	}
-	return "4. Pianificazione – orari del server (" + zone + ")"
+	return Tf("4. Schedule – server time (%s)", zone)
 }
 
 func pathLabel(prefix string) func(*form) string {
 	return func(f *form) string {
 		if f.choice(prefix+"_type") == config.LocSMB {
-			return "Sottocartella"
+			return T("Subfolder")
 		}
-		return "Cartella (percorso)"
+		return T("Folder (path)")
 	}
 }
 
@@ -180,12 +180,12 @@ func atoiField(fm *form, key, what string) (int, error) {
 	}
 	n, err := strconv.Atoi(v)
 	if err != nil || n < 0 {
-		return 0, fmt.Errorf("%s: inserire un numero", what)
+		return 0, errors.New(what + ": " + T("enter a number"))
 	}
 	return n, nil
 }
 
-// jobFromForm costruisce il job dai campi del form (la validazione completa la fa il servizio).
+// jobFromForm builds the job from the form fields (the service does the full validation).
 func jobFromForm(fm *form, id string) (config.Job, error) {
 	j := config.Job{
 		ID:               id,
@@ -206,11 +206,11 @@ func jobFromForm(fm *form, id string) (config.Job, error) {
 	j.Source, j.Dest = loc("src"), loc("dst")
 	var err error
 	if j.Mode == config.ModeMirrorArchive {
-		if j.ArchiveDays, err = atoiField(fm, "archive_days", "giorni di archivio"); err != nil {
+		if j.ArchiveDays, err = atoiField(fm, "archive_days", T("archive days")); err != nil {
 			return j, err
 		}
 	}
-	if j.BandwidthKBps, err = atoiField(fm, "bwlimit", "limite di banda"); err != nil {
+	if j.BandwidthKBps, err = atoiField(fm, "bwlimit", T("bandwidth limit")); err != nil {
 		return j, err
 	}
 	for _, e := range strings.Split(fm.val("excludes"), ",") {
@@ -221,11 +221,11 @@ func jobFromForm(fm *form, id string) (config.Job, error) {
 	s := config.Schedule{Type: fm.choice("sched")}
 	switch s.Type {
 	case config.SchedInterval:
-		if s.EveryMinutes, err = atoiField(fm, "every", "intervallo"); err != nil {
+		if s.EveryMinutes, err = atoiField(fm, "every", T("interval")); err != nil {
 			return j, err
 		}
 		if s.EveryMinutes == 0 {
-			return j, errors.New("intervallo: indicare ogni quanti minuti")
+			return j, errors.New(T("interval: enter every how many minutes"))
 		}
 		s.WindowFrom, s.WindowTo = fm.val("win_from"), fm.val("win_to")
 		if d := fm.get("days").days(); len(d) < 7 {
@@ -245,11 +245,13 @@ func jobFromForm(fm *form, id string) (config.Job, error) {
 	return j, nil
 }
 
-// ---------- form connessione ----------
+// ---------- connection form ----------
 
-var smbVersions = []option{
-	{"", "Automatica (consigliata)"}, {"3.1.1", "SMB 3.1.1"}, {"3.0", "SMB 3.0"},
-	{"2.1", "SMB 2.1 (Windows 7 / 2008 R2)"}, {"2.0", "SMB 2.0"}, {"1.0", "SMB 1 (sconsigliato, sistemi molto vecchi)"},
+func smbVersions() []option {
+	return []option{
+		{"", T("Automatic (recommended)")}, {"3.1.1", "SMB 3.1.1"}, {"3.0", "SMB 3.0"},
+		{"2.1", "SMB 2.1 (Windows 7 / 2008 R2)"}, {"2.0", "SMB 2.0"}, {"1.0", T("SMB 1 (not recommended, very old systems)")},
+	}
 }
 
 func newConnForm(c *api.ConnectionView) *form {
@@ -257,24 +259,24 @@ func newConnForm(c *api.ConnectionView) *form {
 	if isNew {
 		c = &api.ConnectionView{}
 	}
-	title, pwHelp, pwPlace := "Nuova connessione", "viene salvata cifrata (AES-256) e non sarà più visibile", "password dell'utente"
+	title, pwHelp, pwPlace := T("New connection"), T("stored encrypted (AES-256), it will not be visible again"), T("the user's password")
 	if !isNew {
-		title = "Modifica connessione: " + c.Name
-		pwPlace = "(invariata – lasciare vuoto per mantenerla)"
-		pwHelp = "lasciare vuoto per mantenere quella salvata; inserire un valore solo per cambiarla"
+		title = T("Edit connection:") + " " + c.Name
+		pwPlace = T("(unchanged – leave empty to keep it)")
+		pwHelp = T("leave empty to keep the saved one; enter a value only to change it")
 	}
 	fm := &form{Title: title, Fields: []*field{
-		section("Server"),
-		newText("name", "Nome", c.Name, "es. PC Ufficio Amministrazione").withHelp("nome descrittivo, usato per scegliere la connessione nei job"),
-		newText("host", "Host / indirizzo IP", c.Host, "es. 192.168.1.20 oppure PC-UFFICIO").
-			withHelp("indirizzo IP o nome del PC/server; se il nome non viene trovato usare l'IP"),
-		newChoice("ver", "Versione SMB", smbVersions, c.SMBVersion).
-			withHelp("lasciare automatica salvo errori di connessione"),
-		section("Credenziali"),
-		newText("domain", "Dominio / gruppo", c.Domain, "facoltativo, es. AZIENDA o WORKGROUP").
-			withHelp("dominio Windows dell'utente; per un utente locale del PC lasciare vuoto"),
-		newText("user", "Utente", c.Username, "es. backup").withHelp("utente con permesso di lettura sulla condivisione (scrittura se usata come destinazione)"),
-		newPassword("password", "Password", pwPlace).withHelp(pwHelp),
+		section(T("Server")),
+		newText("name", T("Name"), c.Name, T("e.g. Admin Office PC")).withHelp(T("descriptive name, used to choose the connection in the jobs")),
+		newText("host", T("Host / IP address"), c.Host, T("e.g. 192.168.1.20 or OFFICE-PC")).
+			withHelp(T("IP address or name of the PC/server; if the name is not found use the IP")),
+		newChoice("ver", T("SMB version"), smbVersions(), c.SMBVersion).
+			withHelp(T("leave it automatic unless there are connection errors")),
+		section(T("Credentials")),
+		newText("domain", T("Domain / workgroup"), c.Domain, T("optional, e.g. COMPANY or WORKGROUP")).
+			withHelp(T("Windows domain of the user; leave empty for a local user of the PC")),
+		newText("user", T("User"), c.Username, T("e.g. backup")).withHelp(T("user allowed to read the share (and write, if used as destination)")),
+		newPassword("password", T("Password"), pwPlace).withHelp(pwHelp),
 	}}
 	fm.init()
 	return fm

@@ -1,5 +1,5 @@
-// Package secrets cifra le password delle connessioni con AES-256-GCM.
-// La chiave master (32 byte casuali) è salvata in un file leggibile solo da root.
+// Package secrets encrypts connection passwords with AES-256-GCM.
+// The master key (32 random bytes) is stored in a file readable only by root.
 package secrets
 
 import (
@@ -20,7 +20,7 @@ type Box struct {
 	aead cipher.AEAD
 }
 
-// LoadOrCreate legge la chiave master da path; se non esiste ne genera una nuova.
+// LoadOrCreate reads the master key from path; if missing, it generates a new one.
 func LoadOrCreate(path string) (*Box, error) {
 	key, err := readKey(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -33,7 +33,7 @@ func LoadOrCreate(path string) (*Box, error) {
 		}
 		enc := base64.StdEncoding.EncodeToString(key) + "\n"
 		if err := os.WriteFile(path, []byte(enc), 0o600); err != nil {
-			return nil, fmt.Errorf("scrittura chiave master: %w", err)
+			return nil, fmt.Errorf(T("writing master key: %w"), err)
 		}
 	} else if err != nil {
 		return nil, err
@@ -47,7 +47,7 @@ func readKey(path string) ([]byte, error) {
 		return nil, err
 	}
 	if st.Mode().Perm()&0o077 != 0 {
-		return nil, fmt.Errorf("la chiave master %s è accessibile ad altri utenti (permessi %o): usare chmod 600", path, st.Mode().Perm())
+		return nil, errors.New(Tf("the master key %s is accessible to other users (permissions %o): use chmod 600", path, st.Mode().Perm()))
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -55,7 +55,7 @@ func readKey(path string) ([]byte, error) {
 	}
 	key, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(raw)))
 	if err != nil || len(key) != 32 {
-		return nil, fmt.Errorf("chiave master %s non valida", path)
+		return nil, errors.New(Tf("invalid master key %s", path))
 	}
 	return key, nil
 }
@@ -72,8 +72,8 @@ func New(key []byte) (*Box, error) {
 	return &Box{aead: aead}, nil
 }
 
-// Encrypt restituisce il testo cifrato in formato "v1:<base64(nonce|ciphertext)>".
-// aad lega il segreto al suo contesto (es. ID connessione).
+// Encrypt returns the ciphertext as "v1:<base64(nonce|ciphertext)>".
+// aad binds the secret to its context (e.g. the connection ID).
 func (b *Box) Encrypt(plain, aad string) (string, error) {
 	nonce := make([]byte, b.aead.NonceSize())
 	if _, err := rand.Read(nonce); err != nil {
@@ -88,7 +88,7 @@ func (b *Box) Decrypt(enc, aad string) (string, error) {
 		return "", nil
 	}
 	if !strings.HasPrefix(enc, prefix) {
-		return "", errors.New("formato segreto sconosciuto")
+		return "", errors.New(T("unknown secret format"))
 	}
 	raw, err := base64.StdEncoding.DecodeString(enc[len(prefix):])
 	if err != nil {
@@ -96,11 +96,11 @@ func (b *Box) Decrypt(enc, aad string) (string, error) {
 	}
 	ns := b.aead.NonceSize()
 	if len(raw) < ns {
-		return "", errors.New("segreto troncato")
+		return "", errors.New(T("truncated secret"))
 	}
 	plain, err := b.aead.Open(nil, raw[:ns], raw[ns:], []byte(aad))
 	if err != nil {
-		return "", errors.New("impossibile decifrare la password (chiave master cambiata?)")
+		return "", errors.New(T("cannot decrypt the password (has the master key changed?)"))
 	}
 	return string(plain), nil
 }

@@ -14,19 +14,19 @@ func at(s string) time.Time {
 }
 
 func TestScheduleNext(t *testing.T) {
-	// 2026-10-01 è un giovedì
+	// 2026-10-01 is a Thursday
 	cases := []struct {
 		name string
 		s    Schedule
 		now  string
 		want string
 	}{
-		{"intervallo 30m", Schedule{Type: SchedInterval, EveryMinutes: 30}, "2026-10-01 10:07", "2026-10-01 10:30"},
-		{"intervallo esatto", Schedule{Type: SchedInterval, EveryMinutes: 30}, "2026-10-01 10:30", "2026-10-01 11:00"},
-		{"intervallo con fascia", Schedule{Type: SchedInterval, EveryMinutes: 60, WindowFrom: "08:00", WindowTo: "18:00"}, "2026-10-01 18:30", "2026-10-02 08:00"},
-		{"intervallo lun-ven", Schedule{Type: SchedInterval, EveryMinutes: 120, Days: []int{1, 2, 3, 4, 5}}, "2026-10-02 23:00", "2026-10-05 00:00"},
-		{"giornaliero più orari", Schedule{Type: SchedDaily, Times: []string{"13:00", "22:30"}}, "2026-10-01 14:00", "2026-10-01 22:30"},
-		{"settimanale", Schedule{Type: SchedWeekly, Times: []string{"22:00"}, Days: []int{1, 3}}, "2026-10-01 23:00", "2026-10-05 22:00"},
+		{"interval 30m", Schedule{Type: SchedInterval, EveryMinutes: 30}, "2026-10-01 10:07", "2026-10-01 10:30"},
+		{"interval exact", Schedule{Type: SchedInterval, EveryMinutes: 30}, "2026-10-01 10:30", "2026-10-01 11:00"},
+		{"interval with window", Schedule{Type: SchedInterval, EveryMinutes: 60, WindowFrom: "08:00", WindowTo: "18:00"}, "2026-10-01 18:30", "2026-10-02 08:00"},
+		{"interval Mon-Fri", Schedule{Type: SchedInterval, EveryMinutes: 120, Days: []int{1, 2, 3, 4, 5}}, "2026-10-02 23:00", "2026-10-05 00:00"},
+		{"daily several times", Schedule{Type: SchedDaily, Times: []string{"13:00", "22:30"}}, "2026-10-01 14:00", "2026-10-01 22:30"},
+		{"weekly", Schedule{Type: SchedWeekly, Times: []string{"22:00"}, Days: []int{1, 3}}, "2026-10-01 23:00", "2026-10-05 22:00"},
 		{"cron", Schedule{Type: SchedCron, Cron: "15 */2 * * *"}, "2026-10-01 10:20", "2026-10-01 12:15"},
 	}
 	for _, c := range cases {
@@ -39,7 +39,7 @@ func TestScheduleNext(t *testing.T) {
 		}
 	}
 	if !(&Schedule{Type: SchedManual}).Next(time.Now()).IsZero() {
-		t.Error("manuale deve restituire zero")
+		t.Error("manual must return zero")
 	}
 }
 
@@ -51,15 +51,15 @@ func TestValidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if j.Source.Path != "a/b" || j.Dest.Path != "/srv/bk" {
-		t.Errorf("normalizzazione: %+v %+v", j.Source, j.Dest)
+		t.Errorf("normalisation: %+v %+v", j.Source, j.Dest)
 	}
 	j.Source.Path = "../etc"
 	if j.Validate(c) == nil {
-		t.Error("percorso con .. accettato")
+		t.Error("path with .. accepted")
 	}
 	j2 := Job{Name: "y", Source: Location{Type: LocLocal, Path: "/data"}, Dest: Location{Type: LocLocal, Path: "/data/bk"},
 		Mode: ModeMirror, Schedule: Schedule{Type: SchedManual}}
 	if j2.Validate(c) == nil {
-		t.Error("cartelle annidate accettate")
+		t.Error("nested folders accepted")
 	}
 }

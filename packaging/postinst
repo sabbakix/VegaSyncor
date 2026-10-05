@@ -7,7 +7,7 @@ if [ "$1" = "configure" ]; then
         systemctl enable vegasyncor.service >/dev/null 2>&1 || true
         systemctl restart vegasyncor.service || true
     fi
-    # verifica che l'ambiente possa montare le condivisioni SMB (es. container non privilegiato)
+    # check that the environment can mount SMB shares (e.g. unprivileged container)
     if ! CHECK=$(/usr/bin/vegasyncor check 2>&1); then
         echo
         echo "############################################################"

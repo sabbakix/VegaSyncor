@@ -34,16 +34,16 @@ func TestModes(t *testing.T) {
 
 			var log bytes.Buffer
 			stamp := "2026-10-01_220000"
-			// prima una simulazione: non deve cambiare nulla
+			// first a dry run: it must not change anything
 			res, err := Run(context.Background(), Options{Src: src, Dst: dst, Mode: mode, DryRun: true, RunStamp: stamp}, &log, nil)
 			if err != nil {
 				t.Fatalf("dry: %v\n%s", err, log.String())
 			}
 			if _, err := os.Stat(filepath.Join(dst, "sub")); err == nil {
-				t.Fatal("la simulazione ha scritto file")
+				t.Fatal("the dry run wrote files")
 			}
 			if res.Stats.FilesTransferred != 2 {
-				t.Errorf("dry: file da trasferire = %d", res.Stats.FilesTransferred)
+				t.Errorf("dry: files to transfer = %d", res.Stats.FilesTransferred)
 			}
 
 			log.Reset()
@@ -53,53 +53,53 @@ func TestModes(t *testing.T) {
 				t.Fatalf("%v\n%s", err, log.String())
 			}
 			if b, _ := os.ReadFile(filepath.Join(dst, "sub", "b.txt")); string(b) != "due" {
-				t.Error("b.txt non copiato")
+				t.Error("b.txt not copied")
 			}
 			if _, err := os.Stat(filepath.Join(dst, "Thumbs.db")); err == nil {
-				t.Error("Thumbs.db non escluso")
+				t.Error("Thumbs.db not excluded")
 			}
 			_, oldErr := os.Stat(filepath.Join(dst, "vecchio.txt"))
 			arch := filepath.Join(dst, config.ArchiveDirName, stamp)
 			switch mode {
 			case config.ModeAdditive:
 				if oldErr != nil {
-					t.Error("additive ha cancellato")
+					t.Error("additive deleted files")
 				}
 			case config.ModeMirror:
 				if oldErr == nil {
-					t.Error("mirror non ha cancellato")
+					t.Error("mirror did not delete")
 				}
 			case config.ModeMirrorArchive:
 				if oldErr == nil {
-					t.Error("mirror non ha cancellato")
+					t.Error("mirror did not delete")
 				}
 				if b, _ := os.ReadFile(filepath.Join(arch, "vecchio.txt")); string(b) != "da cancellare" {
-					t.Error("file cancellato non archiviato")
+					t.Error("deleted file not archived")
 				}
 				if b, _ := os.ReadFile(filepath.Join(arch, "a.txt")); string(b) != "versione precedente diversa" {
-					t.Error("versione precedente non archiviata")
+					t.Error("previous version not archived")
 				}
 			}
 			if res.Stats.FilesTransferred != 2 {
-				t.Errorf("trasferiti = %d\n%s", res.Stats.FilesTransferred, log.String())
+				t.Errorf("transferred = %d\n%s", res.Stats.FilesTransferred, log.String())
 			}
 			_ = lastProg
 			if !strings.Contains(log.String(), "b.txt") {
-				t.Errorf("log senza elenco file:\n%s", log.String())
+				t.Errorf("log without the list of files:\n%s", log.String())
 			}
 
-			// seconda esecuzione: l'archivio non deve essere toccato né ricopiato
+			// second run: the archive must not be touched or copied again
 			log.Reset()
 			res, err = Run(context.Background(), Options{Src: src, Dst: dst, Mode: mode, RunStamp: "2026-10-02_220000"}, &log, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if res.Stats.FilesTransferred != 0 || res.Stats.FilesDeleted != 0 {
-				t.Errorf("seconda esecuzione non idempotente: %+v\n%s", res.Stats, log.String())
+				t.Errorf("second run not idempotent: %+v\n%s", res.Stats, log.String())
 			}
 			if mode == config.ModeMirrorArchive {
 				if _, err := os.Stat(arch); err != nil {
-					t.Error("archivio rimosso dal mirror")
+					t.Error("archive removed by the mirror")
 				}
 			}
 		})

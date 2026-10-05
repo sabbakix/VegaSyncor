@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"vegasyncor/internal/api"
@@ -16,7 +15,7 @@ import (
 	"vegasyncor/internal/syncer"
 )
 
-// prepare rende accessibile una Location e restituisce la directory effettiva.
+// prepare makes a Location accessible and returns the actual directory.
 func (d *Daemon) prepare(ctx context.Context, cfg *config.Config, name string, loc config.Location, readOnly bool) (string, *mount.Mount, error) {
 	switch loc.Type {
 	case config.LocSMB:
@@ -32,10 +31,10 @@ func (d *Daemon) prepare(ctx context.Context, cfg *config.Config, name string, l
 	case config.LocLocal:
 		st, err := os.Stat(loc.Path)
 		if err != nil {
-			return "", nil, fmt.Errorf("cartella %s non accessibile: %w", loc.Path, err)
+			return "", nil, fmt.Errorf(T("folder %s not accessible: %w"), loc.Path, err)
 		}
 		if !st.IsDir() {
-			return "", nil, fmt.Errorf("%s non è una cartella", loc.Path)
+			return "", nil, errors.New(Tf("%s is not a folder", loc.Path))
 		}
 		if !readOnly {
 			return loc.Path, nil, nil
@@ -46,7 +45,7 @@ func (d *Daemon) prepare(ctx context.Context, cfg *config.Config, name string, l
 		}
 		return m.Point, m, nil
 	}
-	return "", nil, errors.New("tipo di posizione sconosciuto")
+	return "", nil, errors.New(T("unknown location type"))
 }
 
 func (d *Daemon) execute(ctx context.Context, cfg *config.Config, j config.Job, r *api.Run) {
@@ -63,61 +62,69 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 		return api.StatusError, err.Error()
 	}
 	defer lf.Close()
-	logf := func(format string, a ...any) {
-		fmt.Fprintf(lf, "[%s] %s\n", time.Now().Format("15:04:05"), fmt.Sprintf(format, a...))
+	logf := func(text string) {
+		fmt.Fprintf(lf, "[%s] %s\n", time.Now().Format("15:04:05"), text)
 	}
 	fail := func(phase string, err error) (string, string) {
 		if ctx.Err() != nil {
-			logf("annullato durante: %s", phase)
-			return api.StatusCancelled, "annullato"
+			logf(Tf("cancelled during: %s", phase))
+			return api.StatusCancelled, T("cancelled")
 		}
-		logf("ERRORE (%s): %v", phase, err)
+		logf(Tf("ERROR (%s): %v", phase, err))
 		return api.StatusError, fmt.Sprintf("%s: %v", phase, err)
 	}
 
-	logf("Job %q (%s) – %s", j.Name, config.ModeLabel(j.Mode), map[bool]string{true: "SIMULAZIONE", false: "esecuzione reale"}[r.DryRun])
-	logf("Sorgente:     %s %s", j.Source.Display(cfg), map[bool]string{true: "[sola lettura]", false: ""}[j.SourceRO])
-	logf("Destinazione: %s", j.Dest.Display(cfg))
+	kind := T("real run")
+	if r.DryRun {
+		kind = T("DRY RUN")
+	}
+	ro := ""
+	if j.SourceRO {
+		ro = " [" + T("read-only") + "]"
+	}
+	logf(fmt.Sprintf("Job %q (%s) – %s", j.Name, config.ModeLabel(j.Mode), kind))
+	logf(Tf("Source:      %s", j.Source.Display(cfg)) + ro)
+	logf(Tf("Destination: %s", j.Dest.Display(cfg)))
 
-	d.setPhase(r, "connessione sorgente")
+	d.setPhase(r, T("connecting to source"))
 	src, sm, err := d.prepare(ctx, cfg, j.ID+"-src", j.Source, j.SourceRO)
 	if err != nil {
-		return fail("sorgente", err)
+		return fail(T("source"), err)
 	}
 	defer func() {
 		if err := sm.Unmount(); err != nil {
-			logf("attenzione: smontaggio sorgente: %v", err)
+			logf(Tf("warning: unmounting source: %v", err))
 		}
 	}()
 	st, err := os.Stat(src)
 	if err != nil || !st.IsDir() {
-		return fail("sorgente", fmt.Errorf("la cartella %s non esiste nella condivisione", j.Source.Path))
+		return fail(T("source"), errors.New(Tf("the folder %s does not exist in the share", j.Source.Path)))
 	}
 	if j.Mode != config.ModeAdditive && !j.AllowEmptySource {
 		if empty, err := syncer.IsEmptyDir(src); err != nil {
-			return fail("sorgente", err)
+			return fail(T("source"), err)
 		} else if empty {
-			return fail("controllo sicurezza", errors.New("la sorgente è vuota: mirror bloccato per non svuotare la destinazione (abilitare 'Consenti sorgente vuota' se voluto)"))
+			return fail(T("safety check"), errors.New(T("the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
 		}
 	}
 
-	d.setPhase(r, "connessione destinazione")
+	d.setPhase(r, T("connecting to destination"))
 	dst, dm, err := d.prepare(ctx, cfg, j.ID+"-dst", j.Dest, false)
 	if err != nil {
-		return fail("destinazione", err)
+		return fail(T("destination"), err)
 	}
 	defer func() {
 		if err := dm.Unmount(); err != nil {
-			logf("attenzione: smontaggio destinazione: %v", err)
+			logf(Tf("warning: unmounting destination: %v", err))
 		}
 	}()
 	if j.Dest.Type == config.LocSMB && j.Dest.Path != "" && !r.DryRun {
 		if err := os.MkdirAll(dst, 0o770); err != nil {
-			return fail("destinazione", err)
+			return fail(T("destination"), err)
 		}
 	}
 
-	d.setPhase(r, "sincronizzazione")
+	d.setPhase(r, T("synchronizing"))
 	opts := syncer.Options{
 		Src: src, Dst: dst, Mode: j.Mode, Excludes: j.Excludes, DryRun: r.DryRun,
 		BandwidthKBps: j.BandwidthKBps, RunStamp: r.Start.Format(syncer.StampFormat),
@@ -131,34 +138,38 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 	r.Stats = res.Stats
 	d.mu.Unlock()
 	if errors.Is(err, context.Canceled) {
-		logf("annullato dall'utente")
-		return api.StatusCancelled, "annullato"
+		logf(T("cancelled by the user"))
+		return api.StatusCancelled, T("cancelled")
 	}
 	if err != nil {
 		return fail("rsync", err)
 	}
 
 	if j.Mode == config.ModeMirrorArchive && !r.DryRun && j.ArchiveDays > 0 {
-		d.setPhase(r, "pulizia archivio")
+		d.setPhase(r, T("cleaning up the archive"))
 		removed, err := syncer.PruneArchive(dst, j.ArchiveDays, time.Now())
 		if err != nil {
-			logf("attenzione: pulizia archivio: %v", err)
+			logf(Tf("warning: archive cleanup: %v", err))
 		} else if len(removed) > 0 {
-			logf("archivio: rimosse %d cartelle più vecchie di %d giorni", len(removed), j.ArchiveDays)
+			logf(Tf("archive: removed %d folders older than %d days", len(removed), j.ArchiveDays))
 		}
 	}
 
-	summary := fmt.Sprintf("%d file copiati (%s)", res.Stats.FilesTransferred, api.HumanBytes(res.Stats.BytesTransferred))
-	if j.Mode != config.ModeAdditive {
-		summary += fmt.Sprintf(", %d cancellati", res.Stats.FilesDeleted)
+	size := api.HumanBytes(res.Stats.BytesTransferred)
+	var summary string
+	switch {
+	case r.DryRun && j.Mode != config.ModeAdditive:
+		summary = Tf("dry run: %d files to copy (%s), %d to delete", res.Stats.FilesTransferred, size, res.Stats.FilesDeleted)
+	case r.DryRun:
+		summary = Tf("dry run: %d files to copy (%s)", res.Stats.FilesTransferred, size)
+	case j.Mode != config.ModeAdditive:
+		summary = Tf("%d files copied (%s), %d deleted", res.Stats.FilesTransferred, size, res.Stats.FilesDeleted)
+	default:
+		summary = Tf("%d files copied (%s)", res.Stats.FilesTransferred, size)
 	}
-	if r.DryRun {
-		summary = "simulazione: " + strings.Replace(summary, "copiati", "da copiare", 1)
-		summary = strings.Replace(summary, "cancellati", "da cancellare", 1)
-	}
-	logf("Concluso: %s", summary)
+	logf(Tf("Finished: %s", summary))
 	if res.Warning != "" {
-		logf("ATTENZIONE: %s", res.Warning)
+		logf(Tf("WARNING: %s", res.Warning))
 		return api.StatusWarning, summary + " – " + res.Warning
 	}
 	return api.StatusOK, summary

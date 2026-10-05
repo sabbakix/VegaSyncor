@@ -1,8 +1,8 @@
 #!/bin/sh
 set -e
 if [ "$1" = "purge" ]; then
-    # ATTENZIONE: elimina configurazione, chiave master (password salvate) e storico.
-    # I dati di backup nelle destinazioni NON vengono toccati.
+    # WARNING: deletes configuration, master key (saved passwords) and history.
+    # The backup data in the destinations is NOT touched.
     rm -rf /etc/vegasyncor /var/lib/vegasyncor
     getent group vegasyncor >/dev/null && delgroup --system vegasyncor >/dev/null 2>&1 || true
 fi

@@ -1,5 +1,5 @@
-// Package api definisce i messaggi scambiati tra servizio e TUI
-// e un client HTTP su socket Unix.
+// Package api defines the messages exchanged between the service and the TUI,
+// and an HTTP client over a Unix socket.
 package api
 
 import (
@@ -28,12 +28,30 @@ const (
 	StatusSkipped   = "skipped"
 )
 
-// Run è un'esecuzione di un job (in corso o conclusa).
+// Values of Run.Trigger.
+const (
+	TriggerScheduled = "scheduled"
+	TriggerManual    = "manual"
+)
+
+// TriggerLabel returns the translated label of a trigger (also for history
+// entries written by older versions in Italian).
+func TriggerLabel(t string) string {
+	switch t {
+	case TriggerScheduled, "pianificato":
+		return T("scheduled")
+	case TriggerManual, "manuale":
+		return T("manual")
+	}
+	return t
+}
+
+// Run is a job run (in progress or finished).
 type Run struct {
 	ID       string           `json:"id"`
 	JobID    string           `json:"job_id"`
 	JobName  string           `json:"job_name"`
-	Trigger  string           `json:"trigger"` // "pianificato" | "manuale"
+	Trigger  string           `json:"trigger"` // TriggerScheduled | TriggerManual
 	DryRun   bool             `json:"dry_run"`
 	Start    time.Time        `json:"start"`
 	End      time.Time        `json:"end,omitempty"`
@@ -51,14 +69,14 @@ func (r *Run) Duration() time.Duration {
 	return r.End.Sub(r.Start)
 }
 
-// ConnectionView è una connessione senza la password.
+// ConnectionView is a connection without the password.
 type ConnectionView struct {
 	config.Connection
 	HasPassword bool `json:"has_password"`
 }
 
-// ConnectionInput è usato per creare/modificare una connessione.
-// Password vuota in modifica = mantieni quella esistente.
+// ConnectionInput is used to create/edit a connection.
+// An empty password when editing keeps the existing one.
 type ConnectionInput struct {
 	config.Connection
 	Password string `json:"password,omitempty"`
@@ -81,10 +99,17 @@ type Status struct {
 	Jobs        []JobStatus      `json:"jobs"`
 	Connections []ConnectionView `json:"connections"`
 	Warnings    []string         `json:"warnings,omitempty"`
-	// ora del server (con il suo fuso orario): le pianificazioni seguono questo orologio
+	// server time (with its time zone): schedules follow this clock
 	ServerTime time.Time `json:"server_time"`
-	ZoneAbbr   string    `json:"zone_abbr,omitempty"` // es. CEST
-	ZoneName   string    `json:"zone_name,omitempty"` // es. Europe/Rome
+	ZoneAbbr   string    `json:"zone_abbr,omitempty"` // e.g. CEST
+	ZoneName   string    `json:"zone_name,omitempty"` // e.g. Europe/Rome
+	// Language of the service messages ("en", "it").
+	Language string `json:"language,omitempty"`
+}
+
+// Settings are the global settings that can be changed from the TUI.
+type Settings struct {
+	Language string `json:"language"`
 }
 
 type BrowseRequest struct {
@@ -106,7 +131,7 @@ type errorBody struct {
 	Error string `json:"error"`
 }
 
-// Client parla con il servizio tramite socket Unix.
+// Client talks to the service through the Unix socket.
 type Client struct {
 	http *http.Client
 }
@@ -121,8 +146,14 @@ func NewClient(socket string) *Client {
 	return &Client{http: &http.Client{Transport: tr, Timeout: 90 * time.Second}}
 }
 
-// ErrNoDaemon indica che il servizio non è raggiungibile.
-var ErrNoDaemon = errors.New("servizio non raggiungibile")
+// ErrNoDaemon reports that the service cannot be reached (use errors.Is).
+var ErrNoDaemon = errors.New("service unreachable")
+
+// noDaemonError carries a translated message and unwraps to ErrNoDaemon.
+type noDaemonError struct{ msg string }
+
+func (e *noDaemonError) Error() string { return e.msg }
+func (e *noDaemonError) Unwrap() error { return ErrNoDaemon }
 
 func (c *Client) do(method, path string, in, out any) error {
 	var body io.Reader
@@ -143,9 +174,10 @@ func (c *Client) do(method, path string, in, out any) error {
 		var ne *net.OpError
 		if errors.As(err, &ne) {
 			if errors.Is(err, os.ErrPermission) {
-				return fmt.Errorf("%w: permesso negato sul socket (usare sudo o aggiungere l'utente al gruppo vegasyncor)", ErrNoDaemon)
+				return &noDaemonError{T("service unreachable") + ": " +
+					T("permission denied on the socket (use sudo or add the user to the vegasyncor group)")}
 			}
-			return fmt.Errorf("%w (systemctl status vegasyncor)", ErrNoDaemon)
+			return &noDaemonError{T("service unreachable") + " (systemctl status vegasyncor)"}
 		}
 		return err
 	}
@@ -155,7 +187,7 @@ func (c *Client) do(method, path string, in, out any) error {
 		if json.NewDecoder(resp.Body).Decode(&e) == nil && e.Error != "" {
 			return errors.New(e.Error)
 		}
-		return fmt.Errorf("errore %s", resp.Status)
+		return errors.New(Tf("error %s", resp.Status))
 	}
 	if out != nil {
 		return json.NewDecoder(resp.Body).Decode(out)
@@ -166,6 +198,10 @@ func (c *Client) do(method, path string, in, out any) error {
 func (c *Client) Status() (*Status, error) {
 	var s Status
 	return &s, c.do("GET", "/api/status", nil, &s)
+}
+
+func (c *Client) SetLanguage(code string) error {
+	return c.do("POST", "/api/settings", Settings{Language: code}, nil)
 }
 
 func (c *Client) SaveJob(j config.Job) (*config.Job, error) {

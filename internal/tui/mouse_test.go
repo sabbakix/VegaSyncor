@@ -11,7 +11,7 @@ import (
 	"vegasyncor/internal/config"
 )
 
-// Il pulsante [sfoglia] deve stare dentro lo schermo per essere visibile e cliccabile.
+// The [browse] button must stay on screen to be visible and clickable.
 func TestBrowseButtonVisible(t *testing.T) {
 	zone.NewGlobal()
 	for _, w := range []int{80, 118, 160} {
@@ -20,14 +20,14 @@ func TestBrowseButtonVisible(t *testing.T) {
 			Dest: config.Location{Type: "local", Path: "/tmp"}, Mode: "mirror", Schedule: config.Schedule{Type: "manual"}}
 		m.form = newJobForm(&j, m.st.Connections, "")
 		m.View()
-		time.Sleep(50 * time.Millisecond) // zone.Scan registra le zone in modo asincrono
+		time.Sleep(50 * time.Millisecond) // zone.Scan records the zones asynchronously
 		for i, f := range m.form.Fields {
 			if !f.Browse || !m.form.visible(f) {
 				continue
 			}
 			z := zone.Get(fmt.Sprintf("browse:%d", i))
 			if z == nil || z.EndX >= w {
-				t.Errorf("larghezza %d, campo %s: pulsante fuori schermo: %+v", w, f.Key, z)
+				t.Errorf("width %d, field %s: button off screen: %+v", w, f.Key, z)
 			}
 		}
 	}

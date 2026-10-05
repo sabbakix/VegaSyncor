@@ -1,4 +1,4 @@
-// Package tui implementa l'interfaccia testuale di gestione (utilizzabile via SSH).
+// Package tui implements the text-based management interface (usable over SSH).
 package tui
 
 import (
@@ -12,6 +12,7 @@ import (
 
 	"vegasyncor/internal/api"
 	"vegasyncor/internal/config"
+	"vegasyncor/internal/i18n"
 )
 
 type tab int
@@ -22,7 +23,9 @@ const (
 	tabHistory
 )
 
-var tabNames = []string{"1 Sincronizzazioni", "2 Connessioni", "3 Storico"}
+const tabCount = 3
+
+func tabNames() []string { return []string{T("1 Syncs"), T("2 Connections"), T("3 History")} }
 
 type confirmBox struct {
 	text   string
@@ -41,7 +44,7 @@ type Model struct {
 
 	tab        tab
 	st         *api.Status
-	stAt       time.Time // momento (locale) in cui è arrivato st
+	stAt       time.Time // local time when st arrived
 	connErr    error
 	polling    bool
 	jobCur     int
@@ -69,11 +72,13 @@ type Model struct {
 	logTitle string
 	logView  viewport.Model
 
-	lastClick   string // per riconoscere il doppio clic
+	lastClick string // to detect double clicks
+
+	langPending bool // language change sent to the service, not yet confirmed
 	lastClickAt time.Time
 }
 
-// ---------- messaggi ----------
+// ---------- messages ----------
 
 type tickMsg time.Time
 type statusMsg struct {
@@ -108,8 +113,8 @@ type testMsg struct {
 	err  error
 }
 
-// Run avvia la TUI; mouse abilita clic e rotella (nei terminali la selezione del
-// testo richiede allora Shift + trascinamento).
+// Run starts the TUI; mouse enables clicks and the wheel (terminals then
+// require Shift + drag to select text).
 func Run(c *api.Client, version string, mouse bool) error {
 	zone.NewGlobal()
 	defer zone.Close()
@@ -127,12 +132,12 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(m.fetchStatus(), tick())
 }
 
-// tick è allineato allo scatto dei secondi, così l'orologio avanza regolarmente.
+// tick is aligned to the second, so the clock advances regularly.
 func tick() tea.Cmd {
 	return tea.Every(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-// zoneLabel descrive il fuso orario del server, es. "Europe/Rome, CEST".
+// zoneLabel describes the server time zone, e.g. "Europe/Rome, CEST".
 func (m *Model) zoneLabel() string {
 	if m.st == nil {
 		return ""
@@ -146,12 +151,12 @@ func (m *Model) zoneLabel() string {
 	return m.st.ZoneAbbr
 }
 
-// clockNow restituisce l'ora del server (vedi Model.serverNow); prima del primo
-// stato ricevuto usa l'orologio locale.
+// clockNow returns the server time (see Model.serverNow); before the first
+// status arrives it uses the local clock.
 var clockNow = time.Now
 
-// serverNow stima l'ora attuale del server, nel suo fuso orario, partendo
-// dall'ultimo stato ricevuto e aggiungendo il tempo trascorso da allora.
+// serverNow estimates the current server time, in its time zone, from the
+// last status received plus the time elapsed since then.
 func (m *Model) serverNow() time.Time {
 	if m.st == nil || m.st.ServerTime.IsZero() {
 		return time.Now()
@@ -192,7 +197,7 @@ func (m *Model) setFlash(s string, isErr bool) {
 	m.flash, m.flashErr, m.flashAt = s, isErr, time.Now()
 }
 
-// ---------- selezione ----------
+// ---------- selection ----------
 
 func (m *Model) jobs() []api.JobStatus {
 	if m.st == nil {
@@ -262,6 +267,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.st, m.stAt = msg.st, time.Now()
 			clockNow = m.serverNow
+			// the language is a service setting: follow it (unless forced with VEGASYNCOR_LANG)
+			if i18n.FromEnv() == "" && m.st.Language != "" && m.st.Language != i18n.Lang() && !m.langPending {
+				i18n.SetLang(m.st.Language)
+			}
 			m.jobCur = clamp(m.jobCur, len(m.st.Jobs))
 			m.connCur = clamp(m.connCur, len(m.st.Connections))
 		}
@@ -291,12 +300,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.form = nil
-		m.setFlash("Salvato.", false)
+		m.setFlash(T("Saved."), false)
 		return m, m.fetchStatus()
 
 	case logMsg:
 		if msg.err != nil {
-			m.setFlash("Log: "+msg.err.Error(), true)
+			m.setFlash(T("Log:")+" "+msg.err.Error(), true)
 			return m, nil
 		}
 		m.logOpen, m.logRun, m.logTitle = true, msg.run, msg.title
@@ -329,10 +338,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else if !msg.res.OK {
 			m.form.Err = msg.res.Message
 		} else if len(msg.res.Shares) == 0 {
-			m.form.Err = "nessuna condivisione trovata: inserire il nome a mano"
+			m.form.Err = T("no shares found: enter the name manually")
 		} else {
 			m.form.Err = ""
-			m.picker = &picker{title: "Condivisioni disponibili", target: msg.target, items: msg.res.Shares}
+			m.picker = &picker{title: T("Available shares"), target: msg.target, items: msg.res.Shares}
 		}
 		return m, nil
 
@@ -340,11 +349,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		body := ""
 		switch {
 		case msg.err != nil:
-			body = sErr.Render("ERRORE: " + msg.err.Error())
+			body = sErr.Render(T("ERROR:") + " " + msg.err.Error())
 		case !msg.res.OK:
-			body = sErr.Render("ERRORE: " + msg.res.Message)
-			if !strings.Contains(msg.res.Message, "non installato") {
-				body += "\n\n" + sMuted.Render("Controllare host, utente, password e dominio.")
+			body = sErr.Render(T("ERROR:") + " " + msg.res.Message)
+			if !strings.Contains(msg.res.Message, "smbclient") {
+				body += "\n\n" + sMuted.Render(T("Check host, user, password and domain."))
 			}
 		default:
 			body = sOK.Render("OK: "+msg.res.Message) + "\n"
@@ -352,8 +361,15 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				body += "\n  - " + s
 			}
 		}
-		m.info = &infoBox{title: "Test connessione: " + msg.name, body: body}
+		m.info = &infoBox{title: T("Connection test:") + " " + msg.name, body: body}
 		return m, nil
+
+	case langMsg:
+		m.langPending = false
+		if msg.err != nil {
+			m.setFlash(T("Language not saved:")+" "+msg.err.Error(), true)
+		}
+		return m, m.fetchStatus()
 
 	case tea.MouseMsg:
 		return m, m.handleMouse(msg)
@@ -422,14 +438,16 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 	case "3", "h":
 		m.tab = tabHistory
 		return m.fetchHistory()
+	case "L":
+		return m.cycleLanguage()
 	case "tab":
-		m.tab = (m.tab + 1) % 3
+		m.tab = (m.tab + 1) % tabCount
 		if m.tab == tabHistory {
 			return m.fetchHistory()
 		}
 		return nil
 	case "shift+tab":
-		m.tab = (m.tab + 2) % 3
+		m.tab = (m.tab + tabCount - 1) % tabCount
 		if m.tab == tabHistory {
 			return m.fetchHistory()
 		}
@@ -467,27 +485,27 @@ func (m *Model) jobsKey(key string) tea.Cmd {
 	case "r":
 		if j != nil {
 			id := j.Job.ID
-			return m.do("Avviato: "+j.Job.Name, func() error { return m.client.RunJob(id, false) })
+			return m.do(T("Started:")+" "+j.Job.Name, func() error { return m.client.RunJob(id, false) })
 		}
 	case "s":
 		if j != nil {
 			id := j.Job.ID
-			return m.do("Simulazione avviata: "+j.Job.Name+" (premere l per vedere il risultato)", func() error { return m.client.RunJob(id, true) })
+			return m.do(Tf("Dry run started: %s (press l to see the result)", j.Job.Name), func() error { return m.client.RunJob(id, true) })
 		}
 	case "x":
 		if j != nil && j.Current != nil {
 			id, name := j.Job.ID, j.Job.Name
 			m.confirm = &confirmBox{
-				text:   fmt.Sprintf("Interrompere l'esecuzione di %q?", name),
-				action: m.do("Annullamento richiesto", func() error { return m.client.CancelJob(id) }),
+				text:   Tf("Stop the run of %q?", name),
+				action: m.do(T("Cancellation requested"), func() error { return m.client.CancelJob(id) }),
 			}
 		}
 	case "p", " ":
 		if j != nil {
 			id, en := j.Job.ID, !j.Job.Enabled
-			msg := "Job riattivato"
+			msg := T("Job resumed")
 			if !en {
-				msg = "Job sospeso (non partirà da pianificazione)"
+				msg = T("Job paused (it will not run on schedule)")
 			}
 			return m.do(msg, func() error { return m.client.SetJobEnabled(id, en) })
 		}
@@ -495,19 +513,19 @@ func (m *Model) jobsKey(key string) tea.Cmd {
 		if j != nil {
 			id, name := j.Job.ID, j.Job.Name
 			m.confirm = &confirmBox{
-				text:   fmt.Sprintf("Eliminare la sincronizzazione %q?\nI file già copiati nella destinazione NON vengono toccati.", name),
-				action: m.do("Eliminato: "+name, func() error { return m.client.DeleteJob(id) }),
+				text:   Tf("Delete the sync %q?\nFiles already copied to the destination are NOT touched.", name),
+				action: m.do(T("Deleted:")+" "+name, func() error { return m.client.DeleteJob(id) }),
 			}
 		}
 	case "l":
 		if j != nil {
 			if j.Current != nil {
-				return m.openLog(j.Current.ID, j.Job.Name+" – in corso")
+				return m.openLog(j.Current.ID, j.Job.Name+" – "+T("running"))
 			}
 			if j.Last != nil {
 				return m.openLog(j.Last.ID, j.Job.Name+" – "+fmtTime(j.Last.Start))
 			}
-			m.setFlash("Nessuna esecuzione per questo job", true)
+			m.setFlash(T("No runs for this job"), true)
 		}
 	}
 	return nil
@@ -531,7 +549,7 @@ func (m *Model) connsKey(key string) tea.Cmd {
 	case "t":
 		if c != nil {
 			id, name := c.ID, c.Name
-			m.setFlash("Test di "+name+" in corso…", false)
+			m.setFlash(Tf("Testing %s…", name), false)
 			return func() tea.Msg {
 				res, err := m.client.TestConnection(id)
 				return testMsg{name: name, res: res, err: err}
@@ -541,8 +559,8 @@ func (m *Model) connsKey(key string) tea.Cmd {
 		if c != nil {
 			id, name := c.ID, c.Name
 			m.confirm = &confirmBox{
-				text:   fmt.Sprintf("Eliminare la connessione %q e la password salvata?", name),
-				action: m.do("Connessione eliminata", func() error { return m.client.DeleteConnection(id) }),
+				text:   Tf("Delete the connection %q and its saved password?", name),
+				action: m.do(T("Connection deleted"), func() error { return m.client.DeleteConnection(id) }),
 			}
 		}
 	}
@@ -601,9 +619,9 @@ func (m *Model) saveForm() tea.Cmd {
 			return nil
 		}
 		if !j.SourceRO {
-			// la sorgente scrivibile è consentita ma va confermata
+			// a writable source is allowed but must be confirmed
 			m.confirm = &confirmBox{
-				text:   "La sorgente NON sarà protetta in sola lettura.\nConfermi il salvataggio?",
+				text:   T("The source will NOT be protected as read-only.\nSave anyway?"),
 				action: func() tea.Msg { _, err := c.SaveJob(j); return savedMsg{err} },
 			}
 			return nil
@@ -613,7 +631,7 @@ func (m *Model) saveForm() tea.Cmd {
 	case "conn":
 		in := connFromForm(fm, m.formID)
 		if m.formID == "" && in.Password == "" {
-			fm.Err = "inserire la password"
+			fm.Err = T("enter the password")
 			return nil
 		}
 		m.saving = true
@@ -629,10 +647,10 @@ func (m *Model) startBrowse(key string) tea.Cmd {
 	if strings.HasSuffix(key, "_share") {
 		conn := fm.choice(prefix + "_conn")
 		if conn == "" {
-			fm.Err = "creare prima una connessione"
+			fm.Err = T("create a connection first")
 			return nil
 		}
-		fm.Err = "lettura delle condivisioni…"
+		fm.Err = T("reading the shares…")
 		c := m.client
 		return func() tea.Msg {
 			res, err := c.TestConnection(conn)
@@ -644,7 +662,7 @@ func (m *Model) startBrowse(key string) tea.Cmd {
 		loc.ConnectionID = fm.choice(prefix + "_conn")
 		loc.Share = fm.val(prefix + "_share")
 		if loc.ConnectionID == "" || loc.Share == "" {
-			fm.Err = "selezionare prima connessione e condivisione"
+			fm.Err = T("select the connection and the share first")
 			return nil
 		}
 		loc.Path, _ = config.CleanSubPath(loc.Path)
@@ -724,7 +742,7 @@ func (m *Model) pickerKey(key string) tea.Cmd {
 	return nil
 }
 
-// ---------- utilità di formattazione ----------
+// ---------- formatting helpers ----------
 
 func fmtTime(t time.Time) string {
 	if t.IsZero() {
@@ -736,13 +754,13 @@ func fmtTime(t time.Time) string {
 	y2, m2, d2 := t.Date()
 	switch {
 	case y1 == y2 && m1 == m2 && d1 == d2:
-		return "oggi " + t.Format("15:04")
+		return T("today") + " " + t.Format("15:04")
 	case now.AddDate(0, 0, -1).Format("20060102") == t.Format("20060102"):
-		return "ieri " + t.Format("15:04")
+		return T("yesterday") + " " + t.Format("15:04")
 	case now.AddDate(0, 0, 1).Format("20060102") == t.Format("20060102"):
-		return "domani " + t.Format("15:04")
+		return T("tomorrow") + " " + t.Format("15:04")
 	}
-	return t.Format("02/01 15:04")
+	return t.Format(i18n.ShortDateTimeLayout())
 }
 
 func fmtDur(d time.Duration) string {
@@ -760,24 +778,22 @@ func colorizeLog(s string) string {
 	lines := strings.Split(s, "\n")
 	for i, l := range lines {
 		switch {
-		case strings.Contains(l, "ERRORE") || strings.HasPrefix(l, "rsync:") || strings.HasPrefix(l, "rsync error"):
+		case isLogError(l):
 			lines[i] = sErr.Render(l)
-		case strings.Contains(l, "ATTENZIONE") || strings.Contains(l, "attenzione"):
+		case isLogWarning(l):
 			lines[i] = sWarn.Render(l)
 		case strings.HasPrefix(l, "*deleting"):
-			lines[i] = sErr.Render("- cancella  ") + strings.TrimSpace(strings.TrimPrefix(l, "*deleting"))
+			lines[i] = sErr.Render("- "+pad(T("delete"), 10)) + strings.TrimSpace(strings.TrimPrefix(l, "*deleting"))
 		case len(l) > 12 && (l[0] == '>' || l[0] == 'c') && l[1] == 'f':
-			tag := sOK.Render("+ copia     ")
+			tag := sRun.Render("~ " + pad(T("update"), 10))
 			if strings.Contains(l[:12], "+++++++") {
-				tag = sOK.Render("+ nuovo     ")
-			} else {
-				tag = sRun.Render("~ aggiorna  ")
+				tag = sOK.Render("+ " + pad(T("new"), 10))
 			}
 			lines[i] = tag + l[12:]
 		case len(l) > 12 && l[0] == 'c' && l[1] == 'd':
-			lines[i] = sMuted.Render("+ cartella  ") + l[12:]
+			lines[i] = sMuted.Render("+ "+pad(T("folder"), 10)) + l[12:]
 		case len(l) > 12 && l[0] == '.' && l[11] == ' ':
-			lines[i] = sMuted.Render("  invariato " + l[12:])
+			lines[i] = sMuted.Render("  " + pad(T("unchanged"), 10) + l[12:])
 		case isRsyncStat(l):
 			lines[i] = sMuted.Render(l)
 		case strings.HasPrefix(l, "[") || strings.HasPrefix(l, "#"):
@@ -789,7 +805,7 @@ func colorizeLog(s string) string {
 
 var rsyncStatPrefixes = []string{"Number of ", "Total ", "Literal data", "Matched data", "File list ", "sent ", "total size is"}
 
-// isRsyncStat riconosce le righe di statistiche finali di rsync (mostrate in secondo piano).
+// isRsyncStat recognises the final rsync statistics lines (shown dimmed).
 func isRsyncStat(l string) bool {
 	for _, p := range rsyncStatPrefixes {
 		if strings.HasPrefix(l, p) {
@@ -797,4 +813,42 @@ func isRsyncStat(l string) bool {
 		}
 	}
 	return false
+}
+
+// isLogError / isLogWarning recognise error and warning lines in a run log,
+// in any language (old logs may have been written in another language).
+func isLogError(l string) bool {
+	return strings.Contains(l, "ERROR") || strings.Contains(l, "ERRORE") ||
+		strings.HasPrefix(l, "rsync:") || strings.HasPrefix(l, "rsync error")
+}
+
+func isLogWarning(l string) bool {
+	low := strings.ToLower(l)
+	return strings.Contains(low, "warning") || strings.Contains(low, "attenzione")
+}
+
+type langMsg struct {
+	code string
+	err  error
+}
+
+// cycleLanguage switches to the next language and saves it as a service setting.
+func (m *Model) cycleLanguage() tea.Cmd {
+	cur := 0
+	for i, l := range i18n.Languages {
+		if l.Code == i18n.Lang() {
+			cur = i
+		}
+	}
+	return m.setLanguage(i18n.Languages[(cur+1)%len(i18n.Languages)].Code)
+}
+
+func (m *Model) setLanguage(code string) tea.Cmd {
+	if code == i18n.Lang() {
+		return nil
+	}
+	i18n.SetLang(code)
+	m.langPending = true
+	c := m.client
+	return func() tea.Msg { return langMsg{code, c.SetLanguage(code)} }
 }

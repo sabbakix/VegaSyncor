@@ -35,11 +35,11 @@ type field struct {
 	Sel              int
 	Bool             bool
 	Days             [7]bool
-	DayCur           int // indice in config.WeekOrder
+	DayCur           int // index in config.WeekOrder
 	Browse           bool
 	Visible          func(f *form) bool
 	LabelFn          func(f *form) string
-	HelpFn           func(f *form) string // descrizione che dipende dal valore scelto
+	HelpFn           func(f *form) string // description depending on the chosen value
 }
 
 type form struct {
@@ -153,7 +153,7 @@ func (fm *form) setFocus(i int) {
 	}
 }
 
-// update gestisce la navigazione e la modifica dei campi.
+// update handles navigation and editing of the fields.
 func (fm *form) update(msg tea.KeyMsg) tea.Cmd {
 	f := fm.current()
 	switch msg.String() {
@@ -191,7 +191,7 @@ func (fm *form) update(msg tea.KeyMsg) tea.Cmd {
 		case " ", "x":
 			d := config.WeekOrder[f.DayCur]
 			f.Days[d] = !f.Days[d]
-		case "a": // tutti / nessuno
+		case "a": // all / none
 			all := true
 			for _, v := range f.Days {
 				all = all && v
@@ -199,7 +199,7 @@ func (fm *form) update(msg tea.KeyMsg) tea.Cmd {
 			for i := range f.Days {
 				f.Days[i] = !all
 			}
-		case "w": // lun-ven
+		case "w": // Mon-Fri
 			f.Days = [7]bool{false, true, true, true, true, true, false}
 		}
 	case fText, fPassword:
@@ -212,7 +212,7 @@ func (fm *form) update(msg tea.KeyMsg) tea.Cmd {
 
 const labelWidth = 24
 
-// render restituisce le righe del form; height limita l'altezza (scroll).
+// render returns the form lines; height limits the height (scroll).
 func (fm *form) render(width, height int) string {
 	var lines []string
 	focusLine := 0
@@ -262,14 +262,14 @@ func (fm *form) render(width, height int) string {
 func (fm *form) renderValue(i int, f *field, focused bool, w int) string {
 	switch f.Kind {
 	case fText, fPassword:
-		const hint = "[sfoglia]"
+		hint := T("[browse]")
 		if !f.Browse {
 			f.Input.Width = max(w-2, 10)
 			return f.Input.View()
 		}
-		// il campo di testo occupa tutta la larghezza: va ridotto per lasciare
-		// spazio al pulsante, altrimenti finirebbe fuori dallo schermo
-		f.Input.Width = max(w-2-len(hint)-2, 10)
+		// the text input takes the whole width: shrink it to make room for
+		// the button, otherwise it would end up off screen
+		f.Input.Width = max(w-2-runewidth.StringWidth(hint)-2, 10)
 		btn := sMuted
 		if focused {
 			btn = sKey
@@ -287,7 +287,7 @@ func (fm *form) renderValue(i int, f *field, focused bool, w int) string {
 	case fDays:
 		var parts []string
 		for idx, d := range config.WeekOrder {
-			name := config.DayNames[d]
+			name := config.DayName(d)
 			if !f.Days[d] {
 				name = sMuted.Render(name)
 			}
@@ -302,8 +302,8 @@ func (fm *form) renderValue(i int, f *field, focused bool, w int) string {
 	return ""
 }
 
-// checkbox disegna una casella di spunta con soli caratteri ASCII ("[x]" / "[ ]"),
-// leggibili in qualsiasi terminale e font, anche via SSH.
+// checkbox draws a check box with ASCII characters only ("[x]" / "[ ]"),
+// readable in any terminal and font, also over SSH.
 func checkbox(on bool) string {
 	if on {
 		return "[" + sCheck.Render("x") + "]"
@@ -311,8 +311,8 @@ func checkbox(on bool) string {
 	return "[ ]"
 }
 
-// description restituisce il testo d'aiuto del campo attivo, mostrato nella
-// barra fissa in fondo al form (così i campi non si spostano).
+// description returns the help text of the active field, shown in the fixed
+// bar at the bottom of the form (so the fields do not move).
 func (fm *form) description() (label, text string) {
 	if fm.Cur < 0 || fm.Cur >= len(fm.Fields) {
 		return "", ""
@@ -331,11 +331,11 @@ func (fm *form) description() (label, text string) {
 	}
 	switch f.Kind {
 	case fChoice:
-		hints = append(hints, "← → per cambiare scelta")
+		hints = append(hints, T("← → to change the choice"))
 	case fBool:
-		hints = append(hints, "spazio per attivare o disattivare")
+		hints = append(hints, T("space to toggle"))
 	case fDays:
-		hints = append(hints, "← → per spostarsi, spazio per selezionare · w = lun-ven · a = tutti/nessuno")
+		hints = append(hints, T("← → to move, space to select · w = Mon-Fri · a = all/none"))
 	}
 	return label, strings.Join(hints, " · ")
 }

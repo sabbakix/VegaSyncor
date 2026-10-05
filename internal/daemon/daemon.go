@@ -1,4 +1,4 @@
-// Package daemon contiene il servizio: pianificatore, esecuzione dei job e API.
+// Package daemon contains the service: scheduler, job execution and API.
 package daemon
 
 import (
@@ -16,6 +16,7 @@ import (
 
 	"vegasyncor/internal/api"
 	"vegasyncor/internal/config"
+	"vegasyncor/internal/i18n"
 	"vegasyncor/internal/mount"
 	"vegasyncor/internal/paths"
 	"vegasyncor/internal/secrets"
@@ -34,16 +35,15 @@ type running struct {
 type Daemon struct {
 	Version string
 
-	mu       sync.Mutex
-	cfg      *config.Config
-	box      *secrets.Box
-	running  map[string]*running
-	history  []api.Run // ordine cronologico
-	next     map[string]time.Time
-	sem      chan struct{}
-	started  time.Time
-	warnings []string
-	wg       sync.WaitGroup
+	mu      sync.Mutex
+	cfg     *config.Config
+	box     *secrets.Box
+	running map[string]*running
+	history []api.Run // chronological order
+	next    map[string]time.Time
+	sem     chan struct{}
+	started time.Time
+	wg      sync.WaitGroup
 }
 
 func New(version string) (*Daemon, error) {
@@ -55,6 +55,7 @@ func New(version string) (*Daemon, error) {
 	if err != nil {
 		return nil, err
 	}
+	setLanguage(cfg.Language)
 	d := &Daemon{
 		Version: version,
 		cfg:     cfg,
@@ -64,38 +65,54 @@ func New(version string) (*Daemon, error) {
 		sem:     make(chan struct{}, cfg.MaxParallel),
 		started: time.Now(),
 	}
-	if !paths.DevMode() {
-		if p := mount.DetectEnvironment().MountProblem(); p != "" {
-			d.warnings = append(d.warnings, p)
-		}
-	}
-	if err := mount.EnsureTools(); err != nil {
-		d.warnings = append(d.warnings, err.Error())
-	}
-	for _, w := range d.warnings {
+	for _, w := range d.warnings() {
 		slog.Warn(w)
 	}
 	d.loadHistory()
 	return d, nil
 }
 
-// Run avvia pianificatore e API finché ctx non viene annullato.
+// setLanguage applies the configured language; VEGASYNCOR_LANG overrides it.
+func setLanguage(configured string) {
+	if env := i18n.FromEnv(); env != "" {
+		configured = env
+	}
+	i18n.SetLang(configured)
+}
+
+// warnings lists the problems of the environment (container, missing commands),
+// computed on every call so they follow the current language.
+func (d *Daemon) warnings() []string {
+	var out []string
+	if !paths.DevMode() {
+		if p := mount.DetectEnvironment().MountProblem(); p != "" {
+			out = append(out, p)
+		}
+	}
+	if err := mount.EnsureTools(); err != nil {
+		out = append(out, err.Error())
+	}
+	return out
+}
+
+// Run starts the scheduler and the API until ctx is cancelled.
 func (d *Daemon) Run(ctx context.Context) error {
 	if stale := mount.CleanupStale(); len(stale) > 0 {
-		slog.Warn("smontati punti di montaggio residui", "punti", stale)
+		slog.Warn("unmounted leftover mount points", "points", stale)
 	}
 	srv, err := d.serveAPI()
 	if err != nil {
 		return err
 	}
-	slog.Info("VegaSyncor avviato", "versione", d.Version, "socket", paths.Socket(), "job", len(d.cfg.Jobs))
+	slog.Info("VegaSyncor started", "version", d.Version, "socket", paths.Socket(), "jobs", len(d.cfg.Jobs),
+		"language", i18n.Lang())
 
 	t := time.NewTicker(tickInterval)
 	defer t.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("arresto in corso: interruzione dei job attivi")
+			slog.Info("shutting down: stopping the running jobs")
 			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			srv.Shutdown(shutdownCtx)
 			cancel()
@@ -131,15 +148,15 @@ func (d *Daemon) tick(now time.Time) {
 		}
 		d.next[j.ID] = j.Schedule.Next(now)
 		if _, busy := d.running[j.ID]; busy {
-			slog.Warn("esecuzione saltata: il job precedente è ancora in corso", "job", j.Name)
+			slog.Warn("run skipped: the previous run is still in progress", "job", j.Name)
 			d.addHistory(api.Run{
-				ID: runID(j.ID, now), JobID: j.ID, JobName: j.Name, Trigger: "pianificato",
+				ID: runID(j.ID, now), JobID: j.ID, JobName: j.Name, Trigger: api.TriggerScheduled,
 				Start: now, End: now, Status: api.StatusSkipped,
-				Message: "saltato: l'esecuzione precedente era ancora in corso",
+				Message: T("skipped: the previous run was still in progress"),
 			})
 			continue
 		}
-		d.startLocked(j, false, "pianificato")
+		d.startLocked(j, false, api.TriggerScheduled)
 	}
 }
 
@@ -147,20 +164,20 @@ func runID(jobID string, t time.Time) string {
 	return t.Format("20060102-150405") + "-" + jobID
 }
 
-// startLocked avvia un job in background. Richiede d.mu.
+// startLocked starts a job in the background. Requires d.mu.
 func (d *Daemon) startLocked(j config.Job, dry bool, trigger string) (*api.Run, error) {
 	if _, busy := d.running[j.ID]; busy {
-		return nil, errors.New("il job è già in esecuzione")
+		return nil, errors.New(T("the job is already running"))
 	}
 	now := time.Now()
 	r := &api.Run{
 		ID: runID(j.ID, now), JobID: j.ID, JobName: j.Name, Trigger: trigger, DryRun: dry,
-		Start: now, Status: api.StatusRunning, Phase: "in coda",
+		Start: now, Status: api.StatusRunning, Phase: T("queued"),
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	d.running[j.ID] = &running{run: r, cancel: cancel}
-	// registrata subito: se il servizio si interrompe di colpo (riavvio, mancanza
-	// di corrente) al riavvio risulterà "interrotta" invece di sparire
+	// recorded right away: if the service stops abruptly (reboot, power loss)
+	// it shows up as "interrupted" after the restart instead of disappearing
 	d.addHistory(api.Run{ID: r.ID, JobID: r.JobID, JobName: r.JobName, Trigger: r.Trigger,
 		DryRun: r.DryRun, Start: r.Start, Status: api.StatusRunning})
 	cfgSnap := *d.cfg
@@ -172,7 +189,7 @@ func (d *Daemon) startLocked(j config.Job, dry bool, trigger string) (*api.Run, 
 		select {
 		case d.sem <- struct{}{}:
 		case <-ctx.Done():
-			d.finish(j.ID, r, api.StatusCancelled, "annullato prima dell'avvio")
+			d.finish(j.ID, r, api.StatusCancelled, T("cancelled before starting"))
 			return
 		}
 		defer func() { <-d.sem }()
@@ -192,7 +209,7 @@ func (d *Daemon) finish(jobID string, r *api.Run, status, msg string) {
 	defer d.mu.Unlock()
 	r.End = time.Now()
 	r.Status = status
-	r.Message = strings.Join(strings.Fields(msg), " ") // sempre su una riga
+	r.Message = strings.Join(strings.Fields(msg), " ") // always on one line
 	r.Phase = ""
 	r.Progress = nil
 	delete(d.running, jobID)
@@ -203,12 +220,12 @@ func (d *Daemon) finish(jobID string, r *api.Run, status, msg string) {
 	} else if status == api.StatusWarning {
 		lvl = slog.LevelWarn
 	}
-	slog.Log(context.Background(), lvl, "job concluso", "job", r.JobName, "esito", status,
-		"messaggio", msg, "file", r.Stats.FilesTransferred, "byte", r.Stats.BytesTransferred,
-		"durata", r.Duration().Round(time.Second).String(), "simulazione", r.DryRun)
+	slog.Log(context.Background(), lvl, "job finished", "job", r.JobName, "status", status,
+		"message", msg, "files", r.Stats.FilesTransferred, "bytes", r.Stats.BytesTransferred,
+		"duration", r.Duration().Round(time.Second).String(), "dry_run", r.DryRun)
 }
 
-// --- storico ---
+// --- history ---
 
 func (d *Daemon) loadHistory() {
 	raw, err := os.ReadFile(paths.HistoryFile())
@@ -216,7 +233,7 @@ func (d *Daemon) loadHistory() {
 		return
 	}
 	if err := json.Unmarshal(raw, &d.history); err != nil {
-		slog.Warn("storico illeggibile, verrà ricreato", "errore", err)
+		slog.Warn("unreadable history, it will be recreated", "error", err)
 		d.history = nil
 		return
 	}
@@ -226,29 +243,29 @@ func (d *Daemon) loadHistory() {
 		if h.Status != api.StatusRunning {
 			continue
 		}
-		// esecuzione in corso quando il servizio si è fermato di colpo
+		// run in progress when the service stopped abruptly
 		h.Status = api.StatusError
-		h.Message = "interrotta: il servizio si è arrestato durante la copia (riavvio o spegnimento)"
+		h.Message = T("interrupted: the service stopped during the copy (reboot or shutdown)")
 		h.Progress = nil
 		h.End = h.Start
 		if st, err := os.Stat(logPath(h.ID)); err == nil && st.ModTime().After(h.Start) {
-			h.End = st.ModTime() // ultima scrittura del log ≈ momento dell'interruzione
+			h.End = st.ModTime() // last write to the log ≈ time of the interruption
 		}
 		interrupted = true
 	}
 	if interrupted {
 		if err := d.saveHistory(); err != nil {
-			slog.Error("salvataggio storico", "errore", err)
+			slog.Error("saving history", "error", err)
 		}
 	}
 }
 
-// addHistory aggiunge una voce allo storico e lo salva. Richiede d.mu.
+// addHistory adds (or updates) a history entry and saves it. Requires d.mu.
 func (d *Daemon) addHistory(r api.Run) {
 	replaced := false
 	for i := len(d.history) - 1; i >= 0; i-- {
 		if d.history[i].ID == r.ID {
-			d.history[i] = r // aggiorna la voce registrata all'avvio
+			d.history[i] = r // updates the entry recorded at start
 			replaced = true
 			break
 		}
@@ -256,19 +273,19 @@ func (d *Daemon) addHistory(r api.Run) {
 	if !replaced {
 		d.history = append(d.history, r)
 	}
-	// limita il numero di voci per job ed elimina i log corrispondenti
+	// limit the number of entries per job and delete the matching logs
 	var drop []api.Run
 	d.history, drop = trimHistory(d.history, historyPerJob)
 	for _, h := range drop {
 		os.Remove(logPath(h.ID))
 	}
 	if err := d.saveHistory(); err != nil {
-		slog.Error("salvataggio storico", "errore", err)
+		slog.Error("saving history", "error", err)
 	}
 }
 
-// trimHistory mantiene al massimo perJob voci (le più recenti) per ciascun job,
-// preservando l'ordine cronologico. Restituisce anche le voci scartate.
+// trimHistory keeps at most perJob entries (the most recent) for each job,
+// preserving the chronological order. It also returns the discarded entries.
 func trimHistory(h []api.Run, perJob int) (keep, drop []api.Run) {
 	count := map[string]int{}
 	skip := make([]bool, len(h))
@@ -314,9 +331,10 @@ func (d *Daemon) lastRun(jobID string) *api.Run {
 	return nil
 }
 
-// --- stato ---
+// --- status ---
 
 func (d *Daemon) status() api.Status {
+	warnings := d.warnings() // outside the lock: reads system files
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	host, _ := os.Hostname()
@@ -324,8 +342,8 @@ func (d *Daemon) status() api.Status {
 	abbr, _ := now.Zone()
 	s := api.Status{
 		Version: d.Version, Started: d.started, Hostname: host,
-		MaxParallel: d.cfg.MaxParallel, Warnings: d.warnings,
-		ServerTime: now, ZoneAbbr: abbr, ZoneName: zoneName(),
+		MaxParallel: d.cfg.MaxParallel, Warnings: warnings,
+		ServerTime: now, ZoneAbbr: abbr, ZoneName: zoneName(), Language: i18n.Lang(),
 	}
 	for _, j := range d.cfg.Jobs {
 		js := api.JobStatus{
@@ -358,11 +376,11 @@ func viewConn(c config.Connection) api.ConnectionView {
 func (d *Daemon) smbTarget(cfg *config.Config, loc config.Location) (mount.SMBTarget, error) {
 	cn := cfg.Connection(loc.ConnectionID)
 	if cn == nil {
-		return mount.SMBTarget{}, fmt.Errorf("connessione %q non trovata", loc.ConnectionID)
+		return mount.SMBTarget{}, errors.New(Tf("connection %q not found", loc.ConnectionID))
 	}
 	pw, err := d.box.Decrypt(cn.PasswordEnc, cn.ID)
 	if err != nil {
-		return mount.SMBTarget{}, fmt.Errorf("connessione %s: %w", cn.Name, err)
+		return mount.SMBTarget{}, fmt.Errorf("%s %s: %w", T("connection"), cn.Name, err)
 	}
 	return mount.SMBTarget{
 		Host: cn.Host, Share: loc.Share, Username: cn.Username, Password: pw,
@@ -370,7 +388,7 @@ func (d *Daemon) smbTarget(cfg *config.Config, loc config.Location) (mount.SMBTa
 	}, nil
 }
 
-// zoneName restituisce il nome del fuso orario del sistema (es. Europe/Rome), se determinabile.
+// zoneName returns the name of the system time zone (e.g. Europe/Rome), if known.
 func zoneName() string {
 	if tz := strings.TrimPrefix(os.Getenv("TZ"), ":"); tz != "" {
 		return tz

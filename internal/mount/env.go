@@ -2,7 +2,6 @@ package mount
 
 import (
 	"bytes"
-	"fmt"
 	"os"
 	"os/exec"
 	"strings"
@@ -10,17 +9,17 @@ import (
 	"vegasyncor/internal/paths"
 )
 
-// Environment descrive dove gira VegaSyncor, per capire se può montare condivisioni SMB.
+// Environment describes where VegaSyncor runs, to tell whether it can mount SMB shares.
 type Environment struct {
-	// Container: "" se non è un container, altrimenti "lxc", "docker", "podman", ...
+	// Container: "" if not a container, otherwise "lxc", "docker", "podman", ...
 	Container string
-	// Unprivileged: il processo gira in un user namespace (container non privilegiato),
-	// dove il kernel non consente di montare filesystem CIFS.
+	// Unprivileged: the process runs in a user namespace (unprivileged container),
+	// where the kernel does not allow mounting CIFS filesystems.
 	Unprivileged bool
 	Root         bool
 }
 
-// file di sistema letti per il rilevamento (sostituibili nei test)
+// system files read for detection (replaceable in tests)
 var readFile = os.ReadFile
 
 func DetectEnvironment() Environment {
@@ -37,26 +36,26 @@ func inUserNamespace() bool {
 		return false
 	}
 	f := strings.Fields(string(raw))
-	// fuori da un user namespace l'unica riga è "0 0 4294967295"
+	// outside a user namespace the only line is "0 0 4294967295"
 	return !(len(f) == 3 && f[0] == "0" && f[1] == "0" && f[2] == "4294967295")
 }
 
 func detectContainer() string {
 	c := rawContainer()
 	if c == "wsl" {
-		return "" // WSL2 è una VM leggera: i montaggi CIFS funzionano
+		return "" // WSL2 is a lightweight VM: CIFS mounts work
 	}
 	return c
 }
 
 func rawContainer() string {
-	// scritto da systemd all'avvio del container
+	// written by systemd when the container starts
 	if raw, err := readFile("/run/systemd/container"); err == nil {
 		if v := strings.TrimSpace(string(raw)); v != "" {
 			return v
 		}
 	}
-	// variabile d'ambiente del processo 1 (leggibile da root)
+	// environment of process 1 (readable by root)
 	if raw, err := readFile("/proc/1/environ"); err == nil {
 		for _, kv := range bytes.Split(raw, []byte{0}) {
 			if v, ok := strings.CutPrefix(string(kv), "container="); ok && v != "" {
@@ -70,38 +69,38 @@ func rawContainer() string {
 	return ""
 }
 
-// Advice spiega come risolvere quando i montaggi SMB non sono consentiti.
+// Advice explains how to fix it when SMB mounts are not allowed.
 func (e Environment) Advice() string {
 	switch e.Container {
 	case "lxc", "lxc-libvirt":
-		return "usare un container privilegiato con la funzionalità SMB/CIFS attiva " +
-			"(Proxmox: ripristinare il backup del container con --unprivileged 0, poi pct set <ID> --features mount=cifs) " +
-			"oppure una macchina virtuale"
+		return T("use a privileged container with the SMB/CIFS feature enabled " +
+			"(Proxmox: restore the container backup with --unprivileged 0, then pct set <ID> --features mount=cifs) " +
+			"or a virtual machine")
 	case "docker", "podman":
-		return "avviare il container con --privileged (oppure --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH) " +
-			"o installare VegaSyncor direttamente sull'host"
+		return T("start the container with --privileged (or --cap-add SYS_ADMIN --cap-add DAC_READ_SEARCH) " +
+			"or install VegaSyncor directly on the host")
 	}
-	return "usare un container privilegiato oppure una macchina virtuale"
+	return T("use a privileged container or a virtual machine")
 }
 
-// MountProblem restituisce una descrizione del motivo per cui l'ambiente non permette
-// di montare condivisioni SMB, oppure "" se non ci sono impedimenti noti.
+// MountProblem describes why the environment does not allow mounting SMB shares,
+// or returns "" if there are no known obstacles.
 func (e Environment) MountProblem() string {
 	if e.Unprivileged {
-		name := "un container non privilegiato"
+		name := T("an unprivileged container")
 		if e.Container != "" {
-			name = fmt.Sprintf("un container %s non privilegiato", strings.ToUpper(e.Container))
+			name = Tf("an unprivileged %s container", strings.ToUpper(e.Container))
 		}
-		return "VegaSyncor gira in " + name + ": il kernel non consente di montare condivisioni di rete, " +
-			"quindi le sincronizzazioni con cartelle SMB falliranno. Soluzione: " + e.Advice()
+		return Tf("VegaSyncor runs in %s: the kernel does not allow mounting network shares, "+
+			"so syncs with SMB folders will fail. Solution: %s", name, e.Advice())
 	}
 	if !e.Root {
-		return "il servizio non è in esecuzione come root: i montaggi falliranno"
+		return T("the service is not running as root: mounts will fail")
 	}
 	return ""
 }
 
-// CheckLevel indica la gravità di un controllo.
+// CheckLevel is the severity of a check.
 type CheckLevel int
 
 const (
@@ -116,41 +115,41 @@ type Check struct {
 	Detail string
 }
 
-// Diagnose esegue i controlli sull'ambiente di esecuzione.
+// Diagnose runs the checks on the runtime environment.
 func Diagnose() []Check {
 	var out []Check
 	env := DetectEnvironment()
 
 	switch {
 	case paths.DevMode():
-		out = append(out, Check{CheckWarn, "Modalità sviluppo", "VEGASYNCOR_DEV=1: nessun montaggio reale"})
+		out = append(out, Check{CheckWarn, T("Development mode"), T("VEGASYNCOR_DEV=1: no real mounts")})
 	case env.Root:
-		out = append(out, Check{CheckOK, "Utente root", ""})
+		out = append(out, Check{CheckOK, T("Root user"), ""})
 	default:
-		out = append(out, Check{CheckFail, "Utente root", "eseguire come root (sudo); il servizio systemd gira già come root"})
+		out = append(out, Check{CheckFail, T("Root user"), T("run as root (sudo); the systemd service already runs as root")})
 	}
 
 	switch {
 	case env.Unprivileged:
-		out = append(out, Check{CheckFail, "Montaggio condivisioni SMB", env.MountProblem()})
+		out = append(out, Check{CheckFail, T("Mounting SMB shares"), env.MountProblem()})
 	case env.Container == "lxc":
-		out = append(out, Check{CheckWarn, "Container LXC privilegiato",
-			"verificare che sia attiva la funzionalità SMB/CIFS (Proxmox: pct set <ID> --features mount=cifs)"})
+		out = append(out, Check{CheckWarn, T("Privileged LXC container"),
+			T("make sure the SMB/CIFS feature is enabled (Proxmox: pct set <ID> --features mount=cifs)")})
 	case env.Container != "":
-		out = append(out, Check{CheckWarn, "Container " + env.Container, "i montaggi SMB potrebbero non essere consentiti: " + env.Advice()})
+		out = append(out, Check{CheckWarn, "Container " + env.Container, T("SMB mounts may not be allowed:") + " " + env.Advice()})
 	default:
-		out = append(out, Check{CheckOK, "Ambiente", "macchina fisica o virtuale"})
+		out = append(out, Check{CheckOK, T("Environment"), T("physical or virtual machine")})
 	}
 
 	for _, t := range []struct{ cmd, pkg string }{{"rsync", "rsync"}, {"mount.cifs", "cifs-utils"}} {
 		if _, err := exec.LookPath(t.cmd); err != nil {
-			out = append(out, Check{CheckFail, t.cmd, "non installato (apt install " + t.pkg + ")"})
+			out = append(out, Check{CheckFail, t.cmd, Tf("not installed (apt install %s)", t.pkg)})
 		} else {
 			out = append(out, Check{CheckOK, t.cmd, ""})
 		}
 	}
 	if _, err := exec.LookPath("smbclient"); err != nil {
-		out = append(out, Check{CheckWarn, "smbclient", "non installato: l'elenco delle condivisioni non sarà disponibile (apt install smbclient)"})
+		out = append(out, Check{CheckWarn, "smbclient", T("not installed: the list of shares will not be available (apt install smbclient)")})
 	} else {
 		out = append(out, Check{CheckOK, "smbclient", ""})
 	}

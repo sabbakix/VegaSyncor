@@ -1,28 +1,28 @@
 {{CHANGES}}
 
-**VegaSyncor** è un servizio per Debian/Ubuntu che sincronizza a intervalli programmati cartelle di rete SMB/CIFS (PC e server Windows, server Linux con Samba) verso un server di backup. Si gestisce da una TUI utilizzabile anche via SSH.
+**VegaSyncor** is a Debian/Ubuntu service that syncs SMB/CIFS network folders (Windows PCs and servers, Linux servers with Samba) to a backup server on a schedule. It is managed from a TUI that also works over SSH, in English or Italian.
 
-## Installazione rapida (Debian / Ubuntu)
+## Quick install (Debian / Ubuntu)
 
 ```bash
 curl -fsSL https://github.com/sabbakix/VegaSyncor/releases/latest/download/vegasyncor-install.sh | sudo sh
 ```
 
-Lo script:
-- riconosce l'architettura (amd64 / arm64);
-- scarica il pacchetto `.deb` e ne verifica il checksum;
-- installa le dipendenze (`rsync`, `cifs-utils`, `smbclient`);
-- avvia il servizio `vegasyncor`.
+The script:
+- detects the architecture (amd64 / arm64);
+- downloads the `.deb` package and verifies its checksum;
+- installs the dependencies (`rsync`, `cifs-utils`, `smbclient`);
+- starts the `vegasyncor` service (run it again to update).
 
-### Installazione manuale del pacchetto
+### Manual install of the package
 
 ```bash
-# amd64 (PC/server x86_64). Per Raspberry Pi 4/5 e server ARM usare _arm64.deb
+# amd64 (x86_64 PCs/servers). For Raspberry Pi 4/5 and ARM servers use _arm64.deb
 wget https://github.com/sabbakix/VegaSyncor/releases/download/v{{VERSION}}/vegasyncor_{{VERSION}}_amd64.deb
 sudo apt install ./vegasyncor_{{VERSION}}_amd64.deb smbclient
 ```
 
-### Senza pacchetto (altre distribuzioni con systemd)
+### Without the package (other distributions with systemd)
 
 ```bash
 tar xzf vegasyncor_{{VERSION}}_linux_amd64.tar.gz
@@ -30,48 +30,51 @@ cd vegasyncor_{{VERSION}}_linux_amd64
 sudo ./install.sh ./vegasyncor
 ```
 
-Su distribuzioni senza `apt` installare a mano `rsync`, `cifs-utils` e `smbclient`.
+On distributions without `apt`, install `rsync`, `cifs-utils` and `smbclient` manually.
 
-## Dopo l'installazione
+## After installing
 
 ```bash
-sudo vegasyncor           # apre l'interfaccia di gestione
-sudo vegasyncor status    # stato sintetico dei job
+sudo vegasyncor           # opens the management interface
+sudo vegasyncor status    # short status of the jobs
+sudo vegasyncor check     # checks that the system can mount SMB shares
 journalctl -u vegasyncor -f
 ```
 
-1. Scheda **2 Connessioni**, tasto `n`: inserire indirizzo, utente e password del PC/server. Con `t` si prova l'accesso.
-2. Scheda **1 Sincronizzazioni**, tasto `n`: scegliere sorgente, destinazione, modalità e pianificazione, poi `Ctrl+S` per salvare.
-3. Tasto `s` per una **simulazione**, poi `l` per vedere cosa verrebbe copiato o cancellato.
+1. Tab **2 Connections**, key `n`: enter address, user and password of the PC/server. `t` tests the access.
+2. Tab **1 Syncs**, key `n`: choose source, destination, mode and schedule, then `Ctrl+S` to save.
+3. Key `s` for a **dry run**, then `l` to see what would be copied or deleted.
 
-> ⚠️ **Salvare una copia di `/etc/vegasyncor/master.key`**: senza la chiave le password salvate non sono più leggibili.
+The language (English / Italian) can be switched with the `EN|IT` selector next to the clock or the `L` key.
 
-## Funzionalità
+> ⚠️ **Back up `/etc/vegasyncor/master.key`**: without the key the saved passwords can no longer be read.
 
-- **Sorgente in sola lettura garantita dal kernel**: viene montata con `mount.cifs -o ro`, quindi nessun file sulla sorgente può essere modificato o cancellato.
-- **Password cifrate** (AES-256-GCM): non compaiono mai nei log, nei processi o nella TUI.
-- **Modalità per ogni job**:
-  - *Mirror + archivio*: i file cancellati o sovrascritti vengono conservati per N giorni in una cartella datata;
-  - *Mirror*: la destinazione diventa una copia esatta;
-  - *Solo aggiunte*: non cancella mai nulla.
-- **Destinazione** locale oppure su una condivisione SMB.
-- **Pianificazione**:
-  - a intervalli, con fascia oraria e giorni facoltativi;
-  - giornaliera, a uno o più orari;
-  - in giorni scelti della settimana;
-  - con espressione cron, oppure solo manuale.
-- **Simulazione** (dry-run) con elenco dettagliato delle modifiche.
-- **Blocco di sicurezza**: un mirror con sorgente vuota viene fermato per non svuotare il backup.
-- Copia incrementale con `rsync`, limite di banda, esclusioni, storico e log di ogni esecuzione.
+## Features
 
-## File della release
+- **Read-only source enforced by the kernel**: it is mounted with `mount.cifs -o ro`, so no file on the source can be changed or deleted.
+- **Encrypted passwords** (AES-256-GCM): they never appear in logs, processes or the TUI.
+- **Modes per job**:
+  - *Mirror + archive*: deleted or overwritten files are kept for N days in a dated folder;
+  - *Mirror*: the destination becomes an exact copy;
+  - *Add only*: never deletes anything.
+- **Destination** local or on an SMB share.
+- **Scheduling**:
+  - at intervals, with optional time window and days;
+  - daily, at one or more times;
+  - on chosen days of the week;
+  - with a cron expression, or manual only.
+- **Dry run** with a detailed list of the changes.
+- **Safety block**: a mirror with an empty source is stopped so the backup is not wiped.
+- Incremental copy with `rsync`, bandwidth limit, exclusions, history and log of every run.
 
-| File | Descrizione |
+## Release files
+
+| File | Description |
 |---|---|
-| `vegasyncor-install.sh` | installazione/aggiornamento automatico |
-| `vegasyncor_{{VERSION}}_amd64.deb` | pacchetto per Debian/Ubuntu x86_64 |
-| `vegasyncor_{{VERSION}}_arm64.deb` | pacchetto per Debian/Ubuntu ARM64 |
-| `vegasyncor_{{VERSION}}_linux_*.tar.gz` | binario statico, unità systemd e `install.sh` |
-| `SHA256SUMS` | checksum (`sha256sum -c SHA256SUMS`) |
+| `vegasyncor-install.sh` | automatic install/update |
+| `vegasyncor_{{VERSION}}_amd64.deb` | package for Debian/Ubuntu x86_64 |
+| `vegasyncor_{{VERSION}}_arm64.deb` | package for Debian/Ubuntu ARM64 |
+| `vegasyncor_{{VERSION}}_linux_*.tar.gz` | static binary, systemd unit and `install.sh` |
+| `SHA256SUMS` | checksums (`sha256sum -c SHA256SUMS`) |
 
-**Requisiti**: Debian 11+ / Ubuntu 20.04+ (o un'altra distribuzione con systemd), da eseguire come root.
+**Requirements**: Debian 11+ / Ubuntu 20.04+ (or another distribution with systemd), run as root. In Proxmox/LXC containers the container must be *privileged* with the SMB/CIFS feature enabled (see the README).

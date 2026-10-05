@@ -1,5 +1,5 @@
 [Unit]
-Description=VegaSyncor - sincronizzazione cartelle di rete per backup
+Description=VegaSyncor - sync of network folders for backup
 Documentation=file:///usr/share/doc/vegasyncor/README.md
 After=network-online.target remote-fs.target
 Wants=network-online.target
@@ -9,20 +9,20 @@ Type=simple
 ExecStart=/usr/bin/vegasyncor daemon
 Restart=on-failure
 RestartSec=5
-# /run/vegasyncor: socket per la TUI e punti di montaggio temporanei
+# /run/vegasyncor: socket for the TUI and temporary mount points
 RuntimeDirectory=vegasyncor
 RuntimeDirectoryMode=0755
-# /var/lib/vegasyncor: storico e log delle esecuzioni
+# /var/lib/vegasyncor: run history and logs
 StateDirectory=vegasyncor
 StateDirectoryMode=0750
-# /etc/vegasyncor: configurazione e chiave master (solo root)
+# /etc/vegasyncor: configuration and master key (root only)
 ConfigurationDirectory=vegasyncor
 ConfigurationDirectoryMode=0700
 UMask=0027
-# all'arresto il servizio interrompe rsync e smonta le condivisioni
+# on stop the service interrupts rsync and unmounts the shares
 KillMode=mixed
 TimeoutStopSec=60
-# priorità bassa per non rallentare il server durante le copie
+# low priority so the server is not slowed down during copies
 Nice=10
 IOSchedulingClass=best-effort
 IOSchedulingPriority=7

@@ -1,7 +1,7 @@
-# Pubblica una release GitHub quando viene inviato un tag di versione.
+# Publishes a GitHub release when a version tag is pushed.
 #
-#   git tag v0.2.0 && git push origin v0.2.0        → release normale ("latest")
-#   git tag v0.2.0-rc1 && git push origin v0.2.0-rc1 → pre-release (non installata dal comando rapido)
+#   git tag v0.3.0 && git push origin v0.3.0        → normal release ("latest")
+#   git tag v0.3.0-rc1 && git push origin v0.3.0-rc1 → pre-release (not installed by the quick install)
 name: Release
 
 on:
@@ -21,16 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0 # servono i tag precedenti per l'elenco delle novità
+          fetch-depth: 0 # previous tags are needed for the list of changes
 
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
-      - name: Controllo formato del tag
+      - name: Check tag format
         run: |
           echo "${GITHUB_REF_NAME}" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || {
-            echo "::error::Tag '${GITHUB_REF_NAME}' non valido: usare vX.Y.Z oppure vX.Y.Z-rc1"
+            echo "::error::Invalid tag '${GITHUB_REF_NAME}': use vX.Y.Z or vX.Y.Z-rc1"
             exit 1
           }
 
@@ -39,20 +39,20 @@ jobs:
           go vet ./...
           go test ./...
 
-      - name: Build pacchetti
+      - name: Build packages
         run: packaging/build-release.sh "${GITHUB_REF_NAME}"
 
-      - name: Verifica pacchetti
+      - name: Verify packages
         run: |
           cd dist/release
           sha256sum -c SHA256SUMS
           for deb in *.deb; do dpkg-deb --info "$deb" >/dev/null; done
           sh -n vegasyncor-install.sh
-          # il binario deve riportare la versione del tag
+          # the binary must report the tag version
           dpkg-deb -x vegasyncor_*_amd64.deb /tmp/deb
           /tmp/deb/usr/bin/vegasyncor version | grep -F "${GITHUB_REF_NAME#v}"
 
-      - name: Pubblica release
+      - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -60,7 +60,7 @@ jobs:
           cd dist/release
           ASSETS="vegasyncor-install.sh SHA256SUMS $(ls *.deb *.tar.gz)"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "La release $TAG esiste già: aggiorno i file allegati"
+            echo "Release $TAG already exists: updating the attached files"
             gh release upload "$TAG" $ASSETS --clobber
           else
             case "$TAG" in
