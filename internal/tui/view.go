@@ -79,7 +79,7 @@ func (m *Model) viewHeader() string {
 	var state, clock, clockShort, host string
 	switch {
 	case m.connErr != nil:
-		state = sErr.Render("● servizio non raggiungibile")
+		state = sErr.Render("servizio non raggiungibile")
 	case m.st != nil:
 		running := 0
 		for _, j := range m.st.Jobs {
@@ -87,9 +87,9 @@ func (m *Model) viewHeader() string {
 				running++
 			}
 		}
-		state = sOK.Render("● servizio attivo")
+		state = sOK.Render("servizio attivo")
 		if running > 0 {
-			state = sRun.Render(fmt.Sprintf("↻ %d in esecuzione", running))
+			state = sRun.Render(fmt.Sprintf("%d in esecuzione", running))
 		}
 		now := m.serverNow()
 		clock = sClock.Render(fmtClock(now, m.st.ZoneAbbr))
@@ -140,7 +140,7 @@ func (m *Model) viewWarnings() string {
 		for i, l := range lines {
 			prefix := "  "
 			if i == 0 {
-				prefix = "⚠ "
+				prefix = "! "
 			}
 			lines[i] = sWarn.Render(prefix + strings.TrimRight(l, " "))
 		}
@@ -155,12 +155,12 @@ func (m *Model) viewFooter(help string) string {
 	msg := ""
 	if m.flash != "" {
 		if m.flashErr {
-			msg = sErr.Render(" ✖ " + trunc(m.flash, m.w-4))
+			msg = sErr.Render(" ERRORE: " + trunc(m.flash, m.w-10))
 		} else {
-			msg = sOK.Render(" ✔ " + trunc(m.flash, m.w-4))
+			msg = sOK.Render(" OK: " + trunc(m.flash, m.w-6))
 		}
 	} else if m.connErr != nil && m.st != nil {
-		msg = sErr.Render(" ✖ " + trunc(m.connErr.Error(), m.w-4))
+		msg = sErr.Render(" ERRORE: " + trunc(m.connErr.Error(), m.w-10))
 	}
 	return msg + "\n" + rule(m.w) + "\n" + renderHelp(help, m.w)
 }
@@ -202,7 +202,7 @@ func scheduleText(j api.JobStatus) string {
 }
 
 func (m *Model) viewJobs() (string, string) {
-	help := "n nuova · ↵ modifica · r avvia · s simula · x interrompi · p sospendi · l log · d elimina · tab scheda · q esci"
+	help := "n nuova · invio modifica · r avvia · s simula · x interrompi · p sospendi · l log · d elimina · tab scheda · q esci"
 	jobs := m.jobs()
 	if len(jobs) == 0 {
 		var b strings.Builder
@@ -224,14 +224,14 @@ func (m *Model) viewJobs() (string, string) {
 		nameW, lastW, nextW = 16, 13, 12
 	}
 	showWhen := w >= 110
-	fixed := 3 + nameW + lastW + nextW + 4
+	fixed := 7 + nameW + lastW + nextW + 4
 	if showWhen {
 		fixed += whenW + 1
 	}
 	routeW := max(w-fixed, 16)
 
 	var b strings.Builder
-	hdr := "   " + pad("NOME", nameW) + " " + pad("SORGENTE  →  DESTINAZIONE", routeW) + " "
+	hdr := "       " + pad("NOME", nameW) + " " + pad("SORGENTE  →  DESTINAZIONE", routeW) + " "
 	if showWhen {
 		hdr += pad("QUANDO", whenW) + " "
 	}
@@ -242,14 +242,14 @@ func (m *Model) viewJobs() (string, string) {
 	off := listWindow(m.jobCur, 0, len(jobs), listH)
 	for i := off; i < len(jobs) && i < off+listH; i++ {
 		j := jobs[i]
-		icon := sMuted.Render("·")
+		icon := statusTag("")
 		switch {
 		case j.Current != nil:
-			icon = statusIcon(api.StatusRunning)
+			icon = statusTag(api.StatusRunning)
 		case !j.Job.Enabled:
-			icon = sMuted.Render("‖")
+			icon = sMuted.Render("[OFF]")
 		case j.Last != nil:
-			icon = statusIcon(j.Last.Status)
+			icon = statusTag(j.Last.Status)
 		}
 		half := (routeW - 3) / 2
 		route := pad(truncLeft(j.Source, half), half) + " → " + truncLeft(j.Dest, routeW-half-3)
@@ -340,7 +340,7 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 		if r.DryRun {
 			kind = "Ultima simulazione"
 		}
-		lines = append(lines, lbl(kind)+statusIcon(r.Status)+" "+statusLabel(r.Status)+
+		lines = append(lines, lbl(kind)+statusLabel(r.Status)+
 			sMuted.Render(fmt.Sprintf("  %s · durata %s · %s", fmtTime(r.Start), fmtDur(r.Duration()), r.Trigger)))
 		if r.Message != "" {
 			st := sMuted
@@ -366,7 +366,7 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 // ---------- scheda connessioni ----------
 
 func (m *Model) viewConns() (string, string) {
-	help := "n nuova · ↵ modifica · t prova connessione · d elimina · tab scheda · q esci"
+	help := "n nuova · invio modifica · t prova connessione · d elimina · tab scheda · q esci"
 	conns := m.conns()
 	if len(conns) == 0 {
 		return "\n  " + sBold.Render("Nessuna connessione salvata.") + "\n\n" +
@@ -394,14 +394,14 @@ func (m *Model) viewConns() (string, string) {
 		if ver == "" {
 			ver = "auto"
 		}
-		pw := "✔ cifrata"
+		pw := "salvata"
 		if !c.HasPassword {
-			pw = "✖ mancante"
+			pw = "MANCANTE"
 		}
 		row := pad(c.Name, nameW) + " " + pad(c.Host, hostW) + " " + pad(user, userW) + " " +
 			pad(ver, verW) + " " + pad(pw, pwW) + " " + fmt.Sprintf("%d job", used[c.ID])
 		if i == m.connCur {
-			b.WriteString(" " + sKey.Render("▸") + " " + sSel.Render(row) + "\n")
+			b.WriteString(" " + sKey.Render(">") + " " + sSel.Render(row) + "\n")
 		} else {
 			b.WriteString("   " + row + "\n")
 		}
@@ -413,7 +413,7 @@ func (m *Model) viewConns() (string, string) {
 // ---------- scheda storico ----------
 
 func (m *Model) viewHistory() (string, string) {
-	help := "↑↓ scorri · ↵ apri log · r aggiorna · tab scheda · q esci"
+	help := "↑↓ scorri · invio apri log · r aggiorna · tab scheda · q esci"
 	if len(m.history) == 0 {
 		return "\n  " + sMuted.Render("Nessuna esecuzione registrata."), help
 	}
@@ -432,12 +432,14 @@ func (m *Model) viewHistory() (string, string) {
 		}
 		stTxt := map[string]string{api.StatusOK: "completato", api.StatusWarning: "avvisi", api.StatusError: "errore",
 			api.StatusCancelled: "annullato", api.StatusSkipped: "saltato", api.StatusRunning: "in corso"}[r.Status]
-		row := pad(fmtTime(r.Start), startW) + " " + pad(job, jobW) + " " + pad(fmtDur(r.Duration()), durW) + " " +
-			pad(stTxt, stW) + " " + trunc(r.Message, msgW)
+		head := pad(fmtTime(r.Start), startW) + " " + pad(job, jobW) + " " + pad(fmtDur(r.Duration()), durW) + " "
+		tail := " " + trunc(r.Message, msgW)
+		row := head + pad(stTxt, stW) + tail
+		colored := head + statusStyle(r.Status).Render(pad(stTxt, stW)) + tail
 		if i == m.histCur {
-			b.WriteString(" " + statusIcon(r.Status) + " " + sSel.Render(row) + "\n")
+			b.WriteString(" " + sKey.Render(">") + " " + sSel.Render(row) + "\n")
 		} else {
-			b.WriteString(" " + statusIcon(r.Status) + " " + row + "\n")
+			b.WriteString("   " + colored + "\n")
 		}
 	}
 	return b.String(), help
@@ -508,11 +510,11 @@ func (m *Model) jobPreview() string {
 	if fm.get("src_ro").Bool {
 		src += sROBadge.Render("SOLA LETTURA")
 	} else {
-		src += sErr.Render("⚠ sorgente scrivibile")
+		src += sErr.Render("ATTENZIONE: sorgente scrivibile")
 	}
 	dst := sMuted.Render("DESTINAZIONE") + "\n" + truncLeft(show(loc("dst")), inner) + "\n" +
 		sMuted.Render(trunc(config.ModeLabel(fm.choice("mode")), inner))
-	arrow := lipgloss.NewStyle().Foreground(cAccent).Bold(true).Padding(0, 1).Render("\n━━▶")
+	arrow := lipgloss.NewStyle().Foreground(cAccent).Bold(true).Padding(0, 1).Render("\n──>")
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
 		sFocusBox.Width(boxW).Render(src), arrow, sBox.Width(boxW).Render(dst))
 	desc := sMuted.Render("  " + trunc(config.ModeDescription(fm.choice("mode")), m.w-4))
@@ -526,7 +528,7 @@ func (m *Model) overlay() string {
 	switch {
 	case m.info != nil:
 		return sFocusBox.Width(modalW).Render(sTitle.Render(m.info.title) + "\n\n" + m.info.body +
-			"\n\n" + renderHelp("↵ chiudi", modalW))
+			"\n\n" + renderHelp("invio chiudi", modalW))
 	case m.confirm != nil:
 		return sFocusBox.Width(min(modalW, 70)).Render(sBold.Render(m.confirm.text) + "\n\n" +
 			renderHelp("s sì · n no", modalW))
@@ -543,7 +545,7 @@ func (m *Model) overlay() string {
 			}
 		}
 		return sFocusBox.Width(modalW).Render(sTitle.Render(p.title) + "\n\n" + strings.Join(lines, "\n") +
-			"\n\n" + renderHelp("↵ scegli · esc annulla", modalW))
+			"\n\n" + renderHelp("invio scegli · esc annulla", modalW))
 	case m.browser != nil:
 		return m.viewBrowser(modalW)
 	}
@@ -580,7 +582,7 @@ func (m *Model) viewBrowser(w int) string {
 				txt = sSel.Render(txt)
 			case i == 0:
 				txt = sOK.Render(txt)
-			case strings.HasPrefix(it, "↰"):
+			case strings.HasPrefix(it, ".."):
 				txt = sMuted.Render(txt)
 			}
 			lines = append(lines, txt)
@@ -593,7 +595,7 @@ func (m *Model) viewBrowser(w int) string {
 		}
 	}
 	return sFocusBox.Width(w).Render(sTitle.Render(title) + "\n" + path + "\n\n" + body + "\n\n" +
-		renderHelp("↵ apri/seleziona · ← su di un livello · s usa cartella corrente · esc annulla", w))
+		renderHelp("invio apri/seleziona · ← su di un livello · s usa cartella corrente · esc annulla", w))
 }
 
 var weekdays = []string{"dom", "lun", "mar", "mer", "gio", "ven", "sab"}

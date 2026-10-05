@@ -60,7 +60,7 @@ func newPassword(key, label, placeholder string) *field {
 	f := newText(key, label, "", placeholder)
 	f.Kind = fPassword
 	f.Input.EchoMode = textinput.EchoPassword
-	f.Input.EchoCharacter = '•'
+	f.Input.EchoCharacter = '*'
 	return f
 }
 
@@ -234,7 +234,7 @@ func (fm *form) render(width, height int) string {
 		marker := "  "
 		label := sMuted.Render(pad(text, labelWidth))
 		if focused {
-			marker = sKey.Render("▸ ")
+			marker = sKey.Render("> ")
 			label = sBold.Render(pad(text, labelWidth))
 		}
 		valW := width - labelWidth - 3
@@ -270,7 +270,7 @@ func (fm *form) renderValue(f *field, focused bool, w int) string {
 	case fChoice:
 		lbl := f.Options[f.Sel].Label
 		if focused {
-			return sKey.Render("◀ ") + sSel.Render(" "+lbl+" ") + sKey.Render(" ▶")
+			return sKey.Render("< ") + sSel.Render(" "+lbl+" ") + sKey.Render(" >")
 		}
 		return lbl
 	case fBool:

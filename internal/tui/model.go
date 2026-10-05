@@ -327,16 +327,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		body := ""
 		switch {
 		case msg.err != nil:
-			body = sErr.Render("✖ " + msg.err.Error())
+			body = sErr.Render("ERRORE: " + msg.err.Error())
 		case !msg.res.OK:
-			body = sErr.Render("✖ " + msg.res.Message)
+			body = sErr.Render("ERRORE: " + msg.res.Message)
 			if !strings.Contains(msg.res.Message, "non installato") {
 				body += "\n\n" + sMuted.Render("Controllare host, utente, password e dominio.")
 			}
 		default:
-			body = sOK.Render("✔ "+msg.res.Message) + "\n"
+			body = sOK.Render("OK: "+msg.res.Message) + "\n"
 			for _, s := range msg.res.Shares {
-				body += "\n  • " + s
+				body += "\n  - " + s
 			}
 		}
 		m.info = &infoBox{title: "Test connessione: " + msg.name, body: body}
@@ -749,7 +749,7 @@ func colorizeLog(s string) string {
 		case strings.Contains(l, "ATTENZIONE") || strings.Contains(l, "attenzione"):
 			lines[i] = sWarn.Render(l)
 		case strings.HasPrefix(l, "*deleting"):
-			lines[i] = sErr.Render("✖ cancella  ") + strings.TrimSpace(strings.TrimPrefix(l, "*deleting"))
+			lines[i] = sErr.Render("- cancella  ") + strings.TrimSpace(strings.TrimPrefix(l, "*deleting"))
 		case len(l) > 12 && (l[0] == '>' || l[0] == 'c') && l[1] == 'f':
 			tag := sOK.Render("+ copia     ")
 			if strings.Contains(l[:12], "+++++++") {

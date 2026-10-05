@@ -34,12 +34,12 @@ func (b *browser) atRoot() bool {
 }
 
 func (b *browser) items() []string {
-	out := []string{"✔ Usa questa cartella"}
+	out := []string{"[ Usa questa cartella ]"}
 	if !b.atRoot() {
-		out = append(out, "↰ .. cartella superiore")
+		out = append(out, ".. (cartella superiore)")
 	}
 	for _, d := range b.dirs {
-		out = append(out, "▸ "+d+"/")
+		out = append(out, "   "+d+"/")
 	}
 	return out
 }

@@ -69,22 +69,38 @@ func pad(s string, w int) string {
 	return runewidth.FillRight(trunc(s, w), w)
 }
 
-func statusIcon(status string) string {
+// statusTag è l'etichetta di stato a larghezza fissa (5 colonne, solo ASCII).
+func statusTag(status string) string {
 	switch status {
 	case api.StatusOK:
-		return sOK.Render("✔")
+		return sOK.Render("[OK] ")
 	case api.StatusWarning:
-		return sWarn.Render("⚠")
+		return sWarn.Render("[AVV]")
 	case api.StatusError:
-		return sErr.Render("✖")
+		return sErr.Render("[ERR]")
 	case api.StatusCancelled:
-		return sMuted.Render("■")
+		return sMuted.Render("[ANN]")
 	case api.StatusSkipped:
-		return sMuted.Render("»")
+		return sMuted.Render("[SAL]")
 	case api.StatusRunning:
-		return sRun.Render("↻")
+		return sRun.Render("[>>>]")
 	}
-	return sMuted.Render("·")
+	return sMuted.Render("[ - ]")
+}
+
+// statusStyle è il colore associato a un esito.
+func statusStyle(status string) lipgloss.Style {
+	switch status {
+	case api.StatusOK:
+		return sOK
+	case api.StatusWarning:
+		return sWarn
+	case api.StatusError:
+		return sErr
+	case api.StatusRunning:
+		return sRun
+	}
+	return sMuted
 }
 
 func statusLabel(status string) string {

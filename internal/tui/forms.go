@@ -86,7 +86,7 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		newText("name", "Nome", j.Name, "es. Contabilità PC-Ufficio"),
 		newBool("enabled", "Attivo", j.Enabled).withHelp("se disattivato, il job non parte da pianificazione (resta avviabile a mano)"),
 
-		section("① Sorgente – da dove copiare"),
+		section("1. Sorgente – da dove copiare"),
 		newChoice("src_type", "Tipo", locTypes, j.Source.Type),
 		newChoice("src_conn", "Connessione", connOptions(conns), j.Source.ConnectionID).when(isSMB("src_type")),
 		newText("src_share", "Condivisione", j.Source.Share, "es. Documenti").browsable().when(isSMB("src_type")).
@@ -96,13 +96,13 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		newBool("src_ro", "Sola lettura", j.SourceRO).
 			withHelp("consigliato: la sorgente viene montata in sola lettura, impossibile modificarla o cancellarla"),
 
-		section("② Destinazione – dove salvare la copia"),
+		section("2. Destinazione – dove salvare la copia"),
 		newChoice("dst_type", "Tipo", locTypes, j.Dest.Type),
 		newChoice("dst_conn", "Connessione", connOptions(conns), j.Dest.ConnectionID).when(isSMB("dst_type")),
 		newText("dst_share", "Condivisione", j.Dest.Share, "es. Backup").browsable().when(isSMB("dst_type")),
 		newText("dst_path", "Cartella", j.Dest.Path, "vuoto = radice della condivisione").browsable().labeled(pathLabel("dst")).withHelp("Invio per sfogliare le cartelle"),
 
-		section("③ Modalità di copia"),
+		section("3. Modalità di copia"),
 		newChoice("mode", "Modalità", modes, j.Mode),
 		newText("archive_days", "Conserva archivio (gg)", arch, "vuoto = per sempre").
 			when(func(f *form) bool { return f.choice("mode") == config.ModeMirrorArchive }).
@@ -132,9 +132,9 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 
 func schedSection(zone string) string {
 	if zone == "" {
-		return "④ Pianificazione – orari del server"
+		return "4. Pianificazione – orari del server"
 	}
-	return "④ Pianificazione – orari del server (" + zone + ")"
+	return "4. Pianificazione – orari del server (" + zone + ")"
 }
 
 func pathLabel(prefix string) func(*form) string {
