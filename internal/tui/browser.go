@@ -4,6 +4,8 @@ import (
 	"path"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+
 	"vegasyncor/internal/config"
 )
 
@@ -16,6 +18,11 @@ type browser struct {
 	offset  int
 	loading bool
 	err     string
+
+	// allowNew enables "New folder" (destination folders only)
+	allowNew bool
+	naming   bool // typing the name of the new folder
+	input    textinput.Model
 }
 
 // picker is a simple list to choose a value from (e.g. shares).
@@ -33,8 +40,42 @@ func (b *browser) atRoot() bool {
 	return b.loc.Path == ""
 }
 
+// List layout: "Use this folder", then "New folder" (if allowed),
+// then ".." (if not at the root), then the subfolders.
+
+func (b *browser) newIndex() int {
+	if b.allowNew {
+		return 1
+	}
+	return -1
+}
+
+func (b *browser) parentIndex() int {
+	if b.atRoot() {
+		return -1
+	}
+	if b.allowNew {
+		return 2
+	}
+	return 1
+}
+
+func (b *browser) firstDirIndex() int {
+	n := 1
+	if b.allowNew {
+		n++
+	}
+	if !b.atRoot() {
+		n++
+	}
+	return n
+}
+
 func (b *browser) items() []string {
 	out := []string{"[ " + T("Use this folder") + " ]"}
+	if b.allowNew {
+		out = append(out, "[ + "+T("New folder")+" ]")
+	}
 	if !b.atRoot() {
 		out = append(out, ".. ("+T("parent folder")+")")
 	}
@@ -44,12 +85,21 @@ func (b *browser) items() []string {
 	return out
 }
 
+// startNaming opens the input for the name of a new folder.
+func (b *browser) startNaming() {
+	b.input = textinput.New()
+	b.input.Prompt = ""
+	b.input.Placeholder = T("e.g. Backup 2026")
+	b.input.CharLimit = 200
+	b.input.Width = 40
+	b.input.Focus()
+	b.naming = true
+	b.err = ""
+}
+
 // child returns the path of the i-th child in the list (or "" if it is not a folder).
 func (b *browser) child(i int) (string, bool) {
-	idx := i - 1
-	if !b.atRoot() {
-		idx--
-	}
+	idx := i - b.firstDirIndex()
 	if idx < 0 || idx >= len(b.dirs) {
 		return "", false
 	}

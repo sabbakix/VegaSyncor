@@ -68,3 +68,10 @@ func init() {
 		"jobs %q and %q write to the same destination: a mirror deletes the other job's files":  "i job %q e %q scrivono nella stessa destinazione: un mirror cancella i file dell'altro job",
 	})
 }
+
+func init() {
+	addItalian(map[string]string{
+		"a folder with this name already exists": "esiste già una cartella con questo nome",
+		"creating the folder: %w":                "creazione della cartella: %w",
+	})
+}

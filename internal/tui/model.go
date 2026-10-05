@@ -315,6 +315,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.logView.GotoBottom()
 		return m, nil
 
+	case mkdirMsg:
+		if m.browser == nil {
+			return m, nil
+		}
+		if msg.err != nil {
+			m.browser.loading = false
+			m.browser.err = msg.err.Error()
+			return m, nil
+		}
+		// open the new folder: "Use this folder" confirms it as destination
+		m.browser.loc.Path = msg.path
+		m.setFlash(T("Folder created."), false)
+		return m, m.browse()
+
 	case browseMsg:
 		if m.browser == nil {
 			return m, nil
@@ -404,6 +418,8 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 		return nil
 	case m.picker != nil:
 		return m.pickerKey(key)
+	case m.browser != nil && m.browser.naming:
+		return m.browserNameKey(k)
 	case m.browser != nil:
 		return m.browserKey(key)
 	case m.form != nil:
@@ -670,7 +686,7 @@ func (m *Model) startBrowse(key string) tea.Cmd {
 	} else if loc.Path == "" {
 		loc.Path = "/"
 	}
-	m.browser = &browser{target: key, loc: loc}
+	m.browser = &browser{target: key, loc: loc, allowNew: strings.HasPrefix(key, "dst_")}
 	return m.browse()
 }
 
@@ -705,6 +721,10 @@ func (m *Model) browserKey(key string) tea.Cmd {
 	case "s":
 		m.form.get(b.target).setValue(b.loc.Path)
 		m.browser = nil
+	case "n":
+		if b.allowNew && !b.loading {
+			b.startNaming()
+		}
 	case "enter", "right", "l":
 		if b.loading {
 			return nil
@@ -714,7 +734,11 @@ func (m *Model) browserKey(key string) tea.Cmd {
 			m.browser = nil
 			return nil
 		}
-		if b.cur == 1 && !b.atRoot() {
+		if b.cur == b.newIndex() {
+			b.startNaming()
+			return nil
+		}
+		if b.cur == b.parentIndex() {
 			b.loc.Path = b.parent()
 			return m.browse()
 		}
@@ -724,6 +748,36 @@ func (m *Model) browserKey(key string) tea.Cmd {
 		}
 	}
 	return nil
+}
+
+type mkdirMsg struct {
+	path string
+	err  error
+}
+
+// browserNameKey handles the input of the new folder name.
+func (m *Model) browserNameKey(k tea.KeyMsg) tea.Cmd {
+	b := m.browser
+	switch k.String() {
+	case "esc":
+		b.naming = false
+		return nil
+	case "enter":
+		name := strings.TrimSpace(b.input.Value())
+		if name == "" {
+			b.err = T("enter the folder name")
+			return nil
+		}
+		b.naming, b.loading = false, true
+		loc, c := b.loc, m.client
+		return func() tea.Msg {
+			p, err := c.Mkdir(loc, name)
+			return mkdirMsg{p, err}
+		}
+	}
+	var cmd tea.Cmd
+	b.input, cmd = b.input.Update(k)
+	return cmd
 }
 
 func (m *Model) pickerKey(key string) tea.Cmd {

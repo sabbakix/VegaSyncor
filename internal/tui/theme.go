@@ -45,6 +45,7 @@ func setupTheme() {
 	cSelBg = lipgloss.AdaptiveColor{Light: "#2D4A78", Dark: "#2D4A78"}
 	cText = lipgloss.AdaptiveColor{Light: "#DCE3EE", Dark: "#DCE3EE"}
 	cAccent = lipgloss.AdaptiveColor{Light: "#6CB6FF", Dark: "#6CB6FF"}
+	cRowBg = lipgloss.AdaptiveColor{Light: "#253049", Dark: "#253049"}
 	rebuildStyles()
 }
 
@@ -62,18 +63,34 @@ func paintBackground(screen string, w, h int) string {
 		lines = append(lines, "")
 	}
 	for i, l := range lines {
-		l = sgrRe.ReplaceAllStringFunc(l, func(seq string) string {
-			if resetsColours(sgrRe.FindStringSubmatch(seq)[1]) {
-				return seq + themeBase
-			}
-			return seq
-		})
-		if fill := w - lipgloss.Width(l); fill > 0 {
-			l += strings.Repeat(" ", fill)
-		}
-		lines[i] = themeBase + l + "\x1b[0m"
+		lines[i] = paintLine(l, w, themeBase)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// paintLine gives a line the colours selected by base (also after every colour
+// reset inside it) and fills it with spaces up to width w.
+func paintLine(l string, w int, base string) string {
+	l = sgrRe.ReplaceAllStringFunc(l, func(seq string) string {
+		if resetsColours(sgrRe.FindStringSubmatch(seq)[1]) {
+			return seq + base
+		}
+		return seq
+	})
+	if fill := w - lipgloss.Width(l); fill > 0 {
+		l += strings.Repeat(" ", fill)
+	}
+	return base + l + "\x1b[0m"
+}
+
+// highlightRow gives the active row of a form a subtle background across the whole width.
+func highlightRow(line string, w int) string {
+	sample := lipgloss.NewStyle().Background(cRowBg).Render("x")
+	i := strings.Index(sample, "x")
+	if i <= 0 {
+		return line // no colour support
+	}
+	return paintLine(line, w, sample[:i])
 }
 
 // resetsColours reports whether an SGR parameter list resets the background or the

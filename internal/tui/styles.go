@@ -20,6 +20,7 @@ var (
 	cSelBg   = lipgloss.AdaptiveColor{Light: "#DBEAFE", Dark: "#1E3A5F"}
 	cText    = lipgloss.AdaptiveColor{Light: "#111827", Dark: "#E5E7EB"}
 	cBadgeBg = lipgloss.AdaptiveColor{Light: "#FEF3C7", Dark: "#4A3A10"}
+	cRowBg   = lipgloss.AdaptiveColor{Light: "#EEF2F8", Dark: "#1F2937"} // active form row
 )
 
 // styles, built from the palette by rebuildStyles (again after the theme changes it)

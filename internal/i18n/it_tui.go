@@ -133,3 +133,14 @@ func init() {
 		"in %d d %dh":           "tra %d g %dh",
 	})
 }
+
+func init() {
+	addItalian(map[string]string{
+		"New folder":                           "Nuova cartella",
+		"New folder name:":                     "Nome della nuova cartella:",
+		"e.g. Backup 2026":                     "es. Backup 2026",
+		"Folder created.":                      "Cartella creata.",
+		"enter create the folder · esc cancel": "invio crea la cartella · esc annulla",
+		"enter open/select · ← up one level · s use current folder · n new folder · esc cancel": "invio apri/seleziona · ← su di un livello · s usa cartella corrente · n nuova cartella · esc annulla",
+	})
+}

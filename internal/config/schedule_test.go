@@ -109,3 +109,17 @@ func TestDestConflict(t *testing.T) {
 		t.Error("job in conflict with itself")
 	}
 }
+
+func TestCleanFolderName(t *testing.T) {
+	ok := map[string]string{"Backup 2026": "Backup 2026", "  Accounting ": "Accounting", "è-ok_(1)": "è-ok_(1)"}
+	for in, want := range ok {
+		if got, err := CleanFolderName(in); err != nil || got != want {
+			t.Errorf("CleanFolderName(%q) = %q, %v", in, got, err)
+		}
+	}
+	for _, bad := range []string{"", "  ", ".", "..", "a/b", `a\b`, "a:b", "what?", "name.", "tab\there"} {
+		if _, err := CleanFolderName(bad); err == nil {
+			t.Errorf("CleanFolderName(%q) accepted", bad)
+		}
+	}
+}

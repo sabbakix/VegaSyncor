@@ -60,3 +60,13 @@ func init() {
 		"daily":        "ogni giorno",
 	})
 }
+
+func init() {
+	addItalian(map[string]string{
+		"enter the folder name":                            "inserire il nome della cartella",
+		"invalid folder name":                              "nome della cartella non valido",
+		`the folder name cannot contain / \ : * ? " < > |`: `il nome della cartella non può contenere / \ : * ? " < > |`,
+		"the folder name cannot end with a dot":            "il nome della cartella non può terminare con un punto",
+		"the folder name is too long":                      "il nome della cartella è troppo lungo",
+	})
+}

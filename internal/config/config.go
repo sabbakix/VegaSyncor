@@ -351,3 +351,27 @@ func (c *Config) locationsOverlap(a, b Location) bool {
 	pa, pb = strings.TrimSuffix(pa, "/")+"/", strings.TrimSuffix(pb, "/")+"/"
 	return strings.HasPrefix(pa, pb) || strings.HasPrefix(pb, pa)
 }
+
+// CleanFolderName validates the name of a new folder: it must be a single
+// folder name that is also valid on Windows shares.
+func CleanFolderName(name string) (string, error) {
+	name = strings.TrimSpace(name)
+	switch {
+	case name == "":
+		return "", errors.New(T("enter the folder name"))
+	case name == "." || name == "..":
+		return "", errors.New(T("invalid folder name"))
+	case strings.ContainsAny(name, `/\:*?"<>|`):
+		return "", errors.New(T(`the folder name cannot contain / \ : * ? " < > |`))
+	case strings.HasSuffix(name, "."):
+		return "", errors.New(T("the folder name cannot end with a dot"))
+	case len(name) > 200:
+		return "", errors.New(T("the folder name is too long"))
+	}
+	for _, r := range name {
+		if r < 32 {
+			return "", errors.New(T("invalid folder name"))
+		}
+	}
+	return name, nil
+}

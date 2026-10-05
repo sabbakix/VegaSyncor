@@ -111,9 +111,11 @@ administrators only.
 2. Tab **1 Syncs** → `n`:
    - **Source**: choose the connection, then press `Enter` on *Share* to pick it from the list and
      on *Subfolder* to browse the folders.
-   - **Destination**: for example a local folder, also browsable with `Enter`.
+   - **Destination**: for example a local folder, also browsable with `Enter`. In the destination
+     folder browser `n` (or *[ + New folder ]*) creates a new subfolder.
    - **Mode** and **Schedule**.
    - The box at the top always summarises *SOURCE ──> DESTINATION*.
+   - The active field is highlighted; fields changed since the form was opened are marked with `*`.
    - `Ctrl+S` saves.
 3. Select the job and press `s` for a **dry run**, then `l` to see the list of files that would be
    copied/deleted.

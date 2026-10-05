@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/user"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -62,6 +63,7 @@ func (d *Daemon) serveAPI() (*http.Server, error) {
 	mux.HandleFunc("POST /api/connections/{id}/test", d.handleTestConn)
 
 	mux.HandleFunc("POST /api/browse", d.handleBrowse)
+	mux.HandleFunc("POST /api/mkdir", d.handleMkdir)
 	mux.HandleFunc("GET /api/history", d.handleHistory)
 	mux.HandleFunc("GET /api/runs/{id}/log", d.handleLog)
 
@@ -363,29 +365,25 @@ func (d *Daemon) handleTestConn(w http.ResponseWriter, r *http.Request) {
 
 // --- browse ---
 
-func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
-	var in api.BrowseRequest
-	if err := decode(r, &in); err != nil {
-		fail(w, 400, err)
-		return
-	}
-	loc := in.Location
-	var dir string
+// openLocation makes a location accessible for browsing: local folders directly,
+// SMB shares through a temporary mount (read-only unless writable is true).
+// It returns the folder, the normalised location and a cleanup function.
+func (d *Daemon) openLocation(ctx context.Context, loc config.Location, writable bool) (string, config.Location, func(), error) {
 	switch loc.Type {
 	case config.LocLocal:
 		if loc.Path == "" {
 			loc.Path = "/"
 		}
-		dir = filepath.Clean(loc.Path)
+		dir := filepath.Clean(loc.Path)
 		if !filepath.IsAbs(dir) {
-			fail(w, 400, errors.New(T("path is not absolute")))
-			return
+			return "", loc, nil, errors.New(T("path is not absolute"))
 		}
+		loc.Path = dir
+		return dir, loc, func() {}, nil
 	case config.LocSMB:
 		p, err := config.CleanSubPath(loc.Path)
 		if err != nil {
-			fail(w, 400, err)
-			return
+			return "", loc, nil, err
 		}
 		loc.Path = p
 		d.mu.Lock()
@@ -393,22 +391,31 @@ func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 		d.mu.Unlock()
 		t, err := d.smbTarget(cfg, loc)
 		if err != nil {
-			fail(w, 400, err)
-			return
+			return "", loc, nil, err
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
-		defer cancel()
-		m, err := mount.MountSMB(ctx, "browse-"+config.NewID(), t, true)
+		m, err := mount.MountSMB(ctx, "browse-"+config.NewID(), t, !writable)
 		if err != nil {
-			fail(w, 400, err)
-			return
+			return "", loc, nil, err
 		}
-		defer m.Unmount()
-		dir = filepath.Join(m.Point, loc.Path)
-	default:
-		fail(w, 400, errors.New(T("invalid type")))
+		return filepath.Join(m.Point, loc.Path), loc, func() { m.Unmount() }, nil
+	}
+	return "", loc, nil, errors.New(T("invalid type"))
+}
+
+func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
+	var in api.BrowseRequest
+	if err := decode(r, &in); err != nil {
+		fail(w, 400, err)
 		return
 	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	dir, loc, cleanup, err := d.openLocation(ctx, in.Location, false)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	defer cleanup()
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		fail(w, 400, fmt.Errorf(T("reading folder: %w"), err))
@@ -428,6 +435,42 @@ func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(resp.Dirs, func(a, b int) bool { return strings.ToLower(resp.Dirs[a]) < strings.ToLower(resp.Dirs[b]) })
 	reply(w, resp)
+}
+
+// handleMkdir creates a new folder inside a location (used when choosing a destination).
+func (d *Daemon) handleMkdir(w http.ResponseWriter, r *http.Request) {
+	var in api.MkdirRequest
+	if err := decode(r, &in); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	name, err := config.CleanFolderName(in.Name)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+	defer cancel()
+	dir, loc, cleanup, err := d.openLocation(ctx, in.Location, true)
+	if err != nil {
+		fail(w, 400, err)
+		return
+	}
+	defer cleanup()
+	if err := os.Mkdir(filepath.Join(dir, name), 0o775); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			fail(w, 409, errors.New(T("a folder with this name already exists")))
+			return
+		}
+		fail(w, 400, fmt.Errorf(T("creating the folder: %w"), err))
+		return
+	}
+	newPath := path.Join(loc.Path, name)
+	if loc.Type == config.LocSMB {
+		newPath = strings.TrimPrefix(newPath, "/")
+	}
+	slog.Info("folder created", "location", loc.Display(d.cfg), "name", name)
+	reply(w, map[string]string{"path": newPath})
 }
 
 // --- history and logs ---

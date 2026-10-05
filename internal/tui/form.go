@@ -38,6 +38,7 @@ type field struct {
 	DayCur           int // index in config.WeekOrder
 	Browse           bool
 	Visible          func(f *form) bool
+	orig             string // value when the form was opened (to show changed fields)
 	LabelFn          func(f *form) string
 	HelpFn           func(f *form) string // description depending on the chosen value
 }
@@ -126,9 +127,30 @@ func (f *field) days() []int {
 }
 
 func (fm *form) init() {
+	for _, f := range fm.Fields {
+		f.orig = f.snapshot()
+	}
 	fm.Cur = -1
 	fm.move(1)
 }
+
+// snapshot returns the current value of a field as a comparable string.
+func (f *field) snapshot() string {
+	switch f.Kind {
+	case fText, fPassword:
+		return f.Input.Value()
+	case fChoice:
+		return f.choice()
+	case fBool:
+		return fmt.Sprint(f.Bool)
+	case fDays:
+		return fmt.Sprint(f.Days)
+	}
+	return ""
+}
+
+// modified reports whether the field differs from its value when the form was opened.
+func (f *field) modified() bool { return f.Kind != fSection && f.snapshot() != f.orig }
 
 func (fm *form) move(dir int) {
 	n := len(fm.Fields)
@@ -235,14 +257,34 @@ func (fm *form) render(width, height int) string {
 		if f.LabelFn != nil {
 			text = f.LabelFn(fm)
 		}
-		marker := "  "
-		label := sMuted.Render(pad(text, labelWidth))
+		// marker column: ">" = active field, "*" = changed since the form was opened
+		changed := f.modified()
+		marker := " "
 		if focused {
-			marker = sKey.Render("> ")
-			label = sBold.Render(pad(text, labelWidth))
+			marker = sKey.Render(">")
 		}
+		if changed {
+			marker += sWarn.Render("*")
+		} else {
+			marker += " "
+		}
+		labelStyle := sMuted
+		if changed {
+			labelStyle = sWarn
+		}
+		if focused {
+			labelStyle = labelStyle.Bold(true)
+			if !changed {
+				labelStyle = sBold
+			}
+		}
+		label := labelStyle.Render(pad(text, labelWidth))
 		valW := width - labelWidth - 3
-		lines = append(lines, zone.Mark(fmt.Sprintf("field:%d", i), marker+label+" "+fm.renderValue(i, f, focused, valW)))
+		line := marker + label + " " + fm.renderValue(i, f, focused, valW)
+		if focused {
+			line = highlightRow(line, width)
+		}
+		lines = append(lines, zone.Mark(fmt.Sprintf("field:%d", i), line))
 	}
 	if height > 0 && len(lines) > height {
 		if focusLine < fm.offset {

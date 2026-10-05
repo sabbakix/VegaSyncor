@@ -116,6 +116,12 @@ type BrowseRequest struct {
 	Location config.Location `json:"location"`
 }
 
+// MkdirRequest creates the folder Name inside Location.
+type MkdirRequest struct {
+	Location config.Location `json:"location"`
+	Name     string          `json:"name"`
+}
+
 type BrowseResponse struct {
 	Path string   `json:"path"`
 	Dirs []string `json:"dirs"`
@@ -247,6 +253,16 @@ func (c *Client) DeleteConnection(id string) error {
 func (c *Client) TestConnection(id string) (*TestResult, error) {
 	var out TestResult
 	return &out, c.do("POST", "/api/connections/"+url.PathEscape(id)+"/test", nil, &out)
+}
+
+// Mkdir creates a folder inside loc and returns the path of the new folder
+// (relative to the share for SMB, absolute for local folders).
+func (c *Client) Mkdir(loc config.Location, name string) (string, error) {
+	var out struct {
+		Path string `json:"path"`
+	}
+	err := c.do("POST", "/api/mkdir", MkdirRequest{Location: loc, Name: name}, &out)
+	return out.Path, err
 }
 
 func (c *Client) Browse(loc config.Location) (*BrowseResponse, error) {

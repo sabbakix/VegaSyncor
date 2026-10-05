@@ -647,20 +647,32 @@ func (m *Model) viewBrowser(w int) string {
 				txt = sSel.Render(txt)
 			case i == 0:
 				txt = sOK.Render(txt)
+			case i == b.newIndex():
+				txt = sKey.Render(txt)
 			case strings.HasPrefix(it, ".."):
 				txt = sMuted.Render(txt)
 			}
 			lines = append(lines, zone.Mark(fmt.Sprintf("br:%d", i), txt))
 		}
 		body = strings.Join(lines, "\n")
+		if b.naming {
+			body += "\n\n " + sBold.Render(T("New folder name:")) + " " + b.input.View()
+		}
 		if b.err != "" {
 			body += "\n\n" + sErr.Render(trunc(" "+b.err, w-4))
 		} else if len(b.dirs) == 0 {
 			body += "\n" + sMuted.Render(" ("+T("no subfolders")+")")
 		}
 	}
+	help := T("enter open/select · ← up one level · s use current folder · esc cancel")
+	switch {
+	case b.naming:
+		help = T("enter create the folder · esc cancel")
+	case b.allowNew:
+		help = T("enter open/select · ← up one level · s use current folder · n new folder · esc cancel")
+	}
 	return sFocusBox.Width(w).Render(sTitle.Render(title) + "\n" + path + "\n\n" + body + "\n\n" +
-		renderHelp(T("enter open/select · ← up one level · s use current folder · esc cancel"), w))
+		renderHelp(help, w))
 }
 
 // fmtClock formats the server time, e.g. "Mon 2026-10-05 14:32:07 CEST".
