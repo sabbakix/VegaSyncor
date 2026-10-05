@@ -274,10 +274,7 @@ func (fm *form) renderValue(f *field, focused bool, w int) string {
 		}
 		return lbl
 	case fBool:
-		box := "[ ]"
-		if f.Bool {
-			box = "[" + sOK.Render("✔") + "]"
-		}
+		box := checkbox(f.Bool)
 		if focused {
 			return box + sMuted.Render("  spazio per cambiare")
 		}
@@ -286,22 +283,29 @@ func (fm *form) renderValue(f *field, focused bool, w int) string {
 		var parts []string
 		for idx, d := range config.WeekOrder {
 			name := config.DayNames[d]
-			s := name
-			if f.Days[d] {
-				s = sOK.Render("●" + name)
-			} else {
-				s = sMuted.Render("○" + name)
+			if !f.Days[d] {
+				name = sMuted.Render(name)
 			}
+			s := checkbox(f.Days[d]) + " " + name
 			if focused && idx == f.DayCur {
 				s = sSel.Render(s)
 			}
 			parts = append(parts, s)
 		}
-		out := strings.Join(parts, " ")
+		out := strings.Join(parts, "  ")
 		if focused {
 			out += sMuted.Render("  ←→ spazio · w=lun-ven · a=tutti")
 		}
 		return out
 	}
 	return ""
+}
+
+// checkbox disegna una casella di spunta con soli caratteri ASCII ("[x]" / "[ ]"),
+// leggibili in qualsiasi terminale e font, anche via SSH.
+func checkbox(on bool) string {
+	if on {
+		return "[" + sCheck.Render("x") + "]"
+	}
+	return "[ ]"
 }
