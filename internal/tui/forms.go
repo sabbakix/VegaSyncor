@@ -23,7 +23,8 @@ func connOptions(conns []api.ConnectionView) []option {
 	return out
 }
 
-func newJobForm(j *config.Job, conns []api.ConnectionView) *form {
+// zone è il fuso orario del server, mostrato accanto alla pianificazione.
+func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 	isNew := j == nil
 	if isNew {
 		first := ""
@@ -113,7 +114,7 @@ func newJobForm(j *config.Job, conns []api.ConnectionView) *form {
 			withHelp("modelli separati da virgola (Thumbs.db, desktop.ini, ~$* sono già esclusi)"),
 		newText("bwlimit", "Limite banda (KB/s)", bw, "vuoto = illimitata"),
 
-		section("④ Pianificazione"),
+		section(schedSection(zone)),
 		newChoice("sched", "Quando", scheds, j.Schedule.Type),
 		newText("every", "Ogni (minuti)", every, "es. 30, 60, 240").when(sched(config.SchedInterval)).
 			withHelp("60 = ogni ora, 240 = ogni 4 ore"),
@@ -127,6 +128,13 @@ func newJobForm(j *config.Job, conns []api.ConnectionView) *form {
 	}}
 	fm.init()
 	return fm
+}
+
+func schedSection(zone string) string {
+	if zone == "" {
+		return "④ Pianificazione – orari del server"
+	}
+	return "④ Pianificazione – orari del server (" + zone + ")"
 }
 
 func pathLabel(prefix string) func(*form) string {

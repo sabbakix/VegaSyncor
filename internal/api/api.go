@@ -81,6 +81,10 @@ type Status struct {
 	Jobs        []JobStatus      `json:"jobs"`
 	Connections []ConnectionView `json:"connections"`
 	Warnings    []string         `json:"warnings,omitempty"`
+	// ora del server (con il suo fuso orario): le pianificazioni seguono questo orologio
+	ServerTime time.Time `json:"server_time"`
+	ZoneAbbr   string    `json:"zone_abbr,omitempty"` // es. CEST
+	ZoneName   string    `json:"zone_name,omitempty"` // es. Europe/Rome
 }
 
 type BrowseRequest struct {

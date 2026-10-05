@@ -37,6 +37,7 @@ var (
 	sBox      = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cFaint).Padding(0, 1)
 	sFocusBox = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(cAccent).Padding(0, 1)
 	sRule     = lipgloss.NewStyle().Foreground(cFaint)
+	sClock    = lipgloss.NewStyle().Bold(true).Foreground(cText)
 )
 
 func trunc(s string, w int) string {

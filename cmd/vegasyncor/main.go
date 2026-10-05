@@ -140,6 +140,11 @@ func printStatus() error {
 	for _, w := range st.Warnings {
 		fmt.Printf("ATTENZIONE: %s\n\n", w)
 	}
+	zone := st.ZoneAbbr
+	if st.ZoneName != "" && st.ZoneName != st.ZoneAbbr {
+		zone = st.ZoneName + " " + st.ZoneAbbr
+	}
+	fmt.Printf("Ora del server: %s (%s)\n\n", st.ServerTime.Format("02/01/2006 15:04:05"), zone)
 	tw := tabwriter.NewWriter(os.Stdout, 0, 2, 2, ' ', 0)
 	fmt.Fprintln(tw, "JOB\tSTATO\tULTIMA\tESITO\tPROSSIMA")
 	for _, j := range st.Jobs {

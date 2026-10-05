@@ -292,9 +292,12 @@ func (d *Daemon) status() api.Status {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	host, _ := os.Hostname()
+	now := time.Now()
+	abbr, _ := now.Zone()
 	s := api.Status{
 		Version: d.Version, Started: d.started, Hostname: host,
 		MaxParallel: d.cfg.MaxParallel, Warnings: d.warnings,
+		ServerTime: now, ZoneAbbr: abbr, ZoneName: zoneName(),
 	}
 	for _, j := range d.cfg.Jobs {
 		js := api.JobStatus{
@@ -337,4 +340,20 @@ func (d *Daemon) smbTarget(cfg *config.Config, loc config.Location) (mount.SMBTa
 		Host: cn.Host, Share: loc.Share, Username: cn.Username, Password: pw,
 		Domain: cn.Domain, SMBVersion: cn.SMBVersion,
 	}, nil
+}
+
+// zoneName restituisce il nome del fuso orario del sistema (es. Europe/Rome), se determinabile.
+func zoneName() string {
+	if tz := strings.TrimPrefix(os.Getenv("TZ"), ":"); tz != "" {
+		return tz
+	}
+	if p, err := filepath.EvalSymlinks("/etc/localtime"); err == nil {
+		if i := strings.Index(p, "zoneinfo/"); i >= 0 {
+			return p[i+len("zoneinfo/"):]
+		}
+	}
+	if raw, err := os.ReadFile("/etc/timezone"); err == nil {
+		return strings.TrimSpace(string(raw))
+	}
+	return ""
 }

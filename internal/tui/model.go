@@ -40,6 +40,7 @@ type Model struct {
 
 	tab        tab
 	st         *api.Status
+	stAt       time.Time // momento (locale) in cui è arrivato st
 	connErr    error
 	polling    bool
 	jobCur     int
@@ -113,8 +114,36 @@ func (m *Model) Init() tea.Cmd {
 	return tea.Batch(m.fetchStatus(), tick())
 }
 
+// tick è allineato allo scatto dei secondi, così l'orologio avanza regolarmente.
 func tick() tea.Cmd {
-	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+	return tea.Every(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// zoneLabel descrive il fuso orario del server, es. "Europe/Rome, CEST".
+func (m *Model) zoneLabel() string {
+	if m.st == nil {
+		return ""
+	}
+	switch {
+	case m.st.ZoneName != "" && m.st.ZoneAbbr != "" && m.st.ZoneName != m.st.ZoneAbbr:
+		return m.st.ZoneName + ", " + m.st.ZoneAbbr
+	case m.st.ZoneName != "":
+		return m.st.ZoneName
+	}
+	return m.st.ZoneAbbr
+}
+
+// clockNow restituisce l'ora del server (vedi Model.serverNow); prima del primo
+// stato ricevuto usa l'orologio locale.
+var clockNow = time.Now
+
+// serverNow stima l'ora attuale del server, nel suo fuso orario, partendo
+// dall'ultimo stato ricevuto e aggiungendo il tempo trascorso da allora.
+func (m *Model) serverNow() time.Time {
+	if m.st == nil || m.st.ServerTime.IsZero() {
+		return time.Now()
+	}
+	return m.st.ServerTime.Add(time.Since(m.stAt))
 }
 
 func (m *Model) fetchStatus() tea.Cmd {
@@ -218,7 +247,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.polling = false
 		m.connErr = msg.err
 		if msg.err == nil {
-			m.st = msg.st
+			m.st, m.stAt = msg.st, time.Now()
+			clockNow = m.serverNow
 			m.jobCur = clamp(m.jobCur, len(m.st.Jobs))
 			m.connCur = clamp(m.connCur, len(m.st.Connections))
 		}
@@ -412,11 +442,11 @@ func (m *Model) jobsKey(key string) tea.Cmd {
 	case "down", "j":
 		m.jobCur = clamp(m.jobCur+1, n)
 	case "n", "a":
-		m.form, m.formKind, m.formID = newJobForm(nil, m.conns()), "job", ""
+		m.form, m.formKind, m.formID = newJobForm(nil, m.conns(), m.zoneLabel()), "job", ""
 	case "enter", "e":
 		if j != nil {
 			jj := j.Job
-			m.form, m.formKind, m.formID = newJobForm(&jj, m.conns()), "job", j.Job.ID
+			m.form, m.formKind, m.formID = newJobForm(&jj, m.conns(), m.zoneLabel()), "job", j.Job.ID
 		}
 	case "r":
 		if j != nil {
@@ -684,7 +714,8 @@ func fmtTime(t time.Time) string {
 	if t.IsZero() {
 		return "–"
 	}
-	now := time.Now()
+	now := clockNow()
+	t = t.In(now.Location())
 	y1, m1, d1 := now.Date()
 	y2, m2, d2 := t.Date()
 	switch {

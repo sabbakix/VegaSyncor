@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -74,10 +75,11 @@ func (m *Model) viewHeader() string {
 			tabs = append(tabs, sTabOff.Render(n))
 		}
 	}
-	right := ""
+	// parti a destra in ordine di importanza: l'orologio resta sempre, poi stato e nome host
+	var state, clock, clockShort, host string
 	switch {
 	case m.connErr != nil:
-		right = sErr.Render("● servizio non raggiungibile")
+		state = sErr.Render("● servizio non raggiungibile")
 	case m.st != nil:
 		running := 0
 		for _, j := range m.st.Jobs {
@@ -85,13 +87,29 @@ func (m *Model) viewHeader() string {
 				running++
 			}
 		}
-		state := sOK.Render("● servizio attivo")
+		state = sOK.Render("● servizio attivo")
 		if running > 0 {
 			state = sRun.Render(fmt.Sprintf("↻ %d in esecuzione", running))
 		}
-		right = state + sMuted.Render("  "+m.st.Hostname+" ")
+		now := m.serverNow()
+		clock = sClock.Render(fmtClock(now, m.st.ZoneAbbr))
+		clockShort = sClock.Render(now.Format("02/01 15:04:05"))
+		host = sMuted.Render(m.st.Hostname)
 	}
 	line := left + " " + strings.Join(tabs, " ")
+	var right string
+	for _, parts := range [][]string{{state, clock, host}, {state, clock}, {clock}, {clockShort}} {
+		var nonEmpty []string
+		for _, p := range parts {
+			if p != "" {
+				nonEmpty = append(nonEmpty, p)
+			}
+		}
+		right = strings.Join(nonEmpty, "   ") + " "
+		if lipgloss.Width(line)+lipgloss.Width(right)+1 <= m.w {
+			break
+		}
+	}
 	gap := m.w - lipgloss.Width(line) - lipgloss.Width(right)
 	if gap < 1 {
 		right = ""
@@ -297,7 +315,7 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 	if !j.Job.Enabled {
 		sched += sMuted.Render("  – sospeso, solo avvio manuale")
 	} else if !j.Next.IsZero() {
-		sched += sMuted.Render("  – prossima: " + fmtTime(j.Next))
+		sched += sMuted.Render("  – prossima: "+fmtTime(j.Next)+" ") + sRun.Render("("+fmtUntil(j.Next.Sub(m.serverNow()))+")")
 	}
 	lines = append(lines, lbl("Pianificazione")+sched)
 
@@ -307,7 +325,7 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 		if r.DryRun {
 			tag = "Simulazione in corso"
 		}
-		lines = append(lines, sRun.Render(tag)+sMuted.Render(fmt.Sprintf("  da %s · %s", fmtDur(r.Duration()), r.Phase)))
+		lines = append(lines, sRun.Render(tag)+sMuted.Render(fmt.Sprintf("  da %s · %s", fmtDur(m.serverNow().Sub(r.Start)), r.Phase)))
 		if p := r.Progress; p != nil {
 			barW := min(max(w-50, 10), 50)
 			lines = append(lines, progressBar(p.Percent, barW)+fmt.Sprintf(" %3d%%  %s  %s  ETA %s",
@@ -576,4 +594,29 @@ func (m *Model) viewBrowser(w int) string {
 	}
 	return sFocusBox.Width(w).Render(sTitle.Render(title) + "\n" + path + "\n\n" + body + "\n\n" +
 		renderHelp("↵ apri/seleziona · ← su di un livello · s usa cartella corrente · esc annulla", w))
+}
+
+var weekdays = []string{"dom", "lun", "mar", "mer", "gio", "ven", "sab"}
+
+// fmtClock formatta l'ora del server, es. "lun 05/10/2026 14:32:07 CEST".
+func fmtClock(t time.Time, zone string) string {
+	s := weekdays[t.Weekday()] + " " + t.Format("02/01/2006 15:04:05")
+	if zone != "" {
+		s += " " + zone
+	}
+	return s
+}
+
+// fmtUntil descrive quanto manca a un'esecuzione, es. "tra 2h 15m".
+func fmtUntil(d time.Duration) string {
+	switch {
+	case d < time.Minute:
+		return "tra meno di un minuto"
+	case d < time.Hour:
+		return fmt.Sprintf("tra %d min", int(d.Minutes()))
+	case d < 24*time.Hour:
+		return fmt.Sprintf("tra %dh %02dm", int(d.Hours()), int(d.Minutes())%60)
+	}
+	days := int(d.Hours()) / 24
+	return fmt.Sprintf("tra %d g %dh", days, int(d.Hours())%24)
 }
