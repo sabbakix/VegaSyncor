@@ -6,12 +6,19 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	zone "github.com/lrstanley/bubblezone"
 
 	"vegasyncor/internal/api"
 	"vegasyncor/internal/config"
 )
 
+// View disegna lo schermo; zone.Scan registra le posizioni delle parti cliccabili.
 func (m *Model) View() string {
+	helpKeys = helpKeys[:0]
+	return zone.Scan(m.render())
+}
+
+func (m *Model) render() string {
 	if m.w == 0 {
 		return "caricamento…"
 	}
@@ -74,11 +81,11 @@ func (m *Model) viewHeader() string {
 	left := sTitle.Render(" VegaSyncor ")
 	var tabs []string
 	for i, n := range tabNames {
+		st := sTabOff
 		if tab(i) == m.tab && m.form == nil {
-			tabs = append(tabs, sTabOn.Render(n))
-		} else {
-			tabs = append(tabs, sTabOff.Render(n))
+			st = sTabOn
 		}
+		tabs = append(tabs, zone.Mark(fmt.Sprintf("tab:%d", i), st.Render(n)))
 	}
 	// parti a destra in ordine di importanza: l'orologio resta sempre, poi stato e nome host
 	var state, clock, clockShort, host string
@@ -178,7 +185,12 @@ func renderHelp(h string, w int) string {
 	var parts []string
 	for _, p := range strings.Split(h, " · ") {
 		k, d, _ := strings.Cut(p, " ")
-		parts = append(parts, sKey.Render(k)+" "+sMuted.Render(d))
+		item := sKey.Render(k) + " " + sMuted.Render(d)
+		if _, ok := keyForLabel(k); ok {
+			item = zone.Mark("key:"+k, item)
+			helpKeys = append(helpKeys, k)
+		}
+		parts = append(parts, item)
 	}
 	out := " " + strings.Join(parts, sMuted.Render("  ·  "))
 	if lipgloss.Width(out) > w {
@@ -280,10 +292,9 @@ func (m *Model) viewJobs() (string, string) {
 		}
 		row += pad(last, lastW) + " " + pad(next, nextW)
 		if i == m.jobCur {
-			b.WriteString(" " + icon + " " + sSel.Render(row) + "\n")
-		} else {
-			b.WriteString(" " + icon + " " + row + "\n")
+			row = sSel.Render(row)
 		}
+		b.WriteString(zone.Mark(fmt.Sprintf("job:%d", i), " "+icon+" "+row) + "\n")
 	}
 	if sel := m.selJob(); sel != nil {
 		b.WriteString("\n" + m.viewJobDetail(*sel))
@@ -405,11 +416,11 @@ func (m *Model) viewConns() (string, string) {
 		}
 		row := pad(c.Name, nameW) + " " + pad(c.Host, hostW) + " " + pad(user, userW) + " " +
 			pad(ver, verW) + " " + pad(pw, pwW) + " " + fmt.Sprintf("%d job", used[c.ID])
+		line := "   " + row
 		if i == m.connCur {
-			b.WriteString(" " + sKey.Render(">") + " " + sSel.Render(row) + "\n")
-		} else {
-			b.WriteString("   " + row + "\n")
+			line = " " + sKey.Render(">") + " " + sSel.Render(row)
 		}
+		b.WriteString(zone.Mark(fmt.Sprintf("conn:%d", i), line) + "\n")
 	}
 	b.WriteString("\n" + sMuted.Render("  Le password sono cifrate nel file di configurazione con una chiave master accessibile solo a root."))
 	return b.String(), help
@@ -441,11 +452,11 @@ func (m *Model) viewHistory() (string, string) {
 		tail := " " + trunc(r.Message, msgW)
 		row := head + pad(stTxt, stW) + tail
 		colored := head + statusStyle(r.Status).Render(pad(stTxt, stW)) + tail
+		line := "   " + colored
 		if i == m.histCur {
-			b.WriteString(" " + sKey.Render(">") + " " + sSel.Render(row) + "\n")
-		} else {
-			b.WriteString("   " + colored + "\n")
+			line = " " + sKey.Render(">") + " " + sSel.Render(row)
 		}
+		b.WriteString(zone.Mark(fmt.Sprintf("hist:%d", i), line) + "\n")
 	}
 	return b.String(), help
 }
@@ -571,11 +582,11 @@ func (m *Model) overlay() string {
 		h := max(m.h-10, 3)
 		off := listWindow(p.cur, 0, len(p.items), h)
 		for i := off; i < len(p.items) && i < off+h; i++ {
+			line := pad(" "+p.items[i], modalW-4)
 			if i == p.cur {
-				lines = append(lines, sSel.Render(pad(" "+p.items[i], modalW-4)))
-			} else {
-				lines = append(lines, " "+p.items[i])
+				line = sSel.Render(line)
 			}
+			lines = append(lines, zone.Mark(fmt.Sprintf("pick:%d", i), line))
 		}
 		return sFocusBox.Width(modalW).Render(sTitle.Render(p.title) + "\n\n" + strings.Join(lines, "\n") +
 			"\n\n" + renderHelp("invio scegli · esc annulla", modalW))
@@ -618,7 +629,7 @@ func (m *Model) viewBrowser(w int) string {
 			case strings.HasPrefix(it, ".."):
 				txt = sMuted.Render(txt)
 			}
-			lines = append(lines, txt)
+			lines = append(lines, zone.Mark(fmt.Sprintf("br:%d", i), txt))
 		}
 		body = strings.Join(lines, "\n")
 		if b.err != "" {

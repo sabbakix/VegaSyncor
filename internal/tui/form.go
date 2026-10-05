@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	zone "github.com/lrstanley/bubblezone"
 	"github.com/mattn/go-runewidth"
 
 	"vegasyncor/internal/config"
@@ -240,7 +242,7 @@ func (fm *form) render(width, height int) string {
 			label = sBold.Render(pad(text, labelWidth))
 		}
 		valW := width - labelWidth - 3
-		lines = append(lines, marker+label+" "+fm.renderValue(f, focused, valW))
+		lines = append(lines, zone.Mark(fmt.Sprintf("field:%d", i), marker+label+" "+fm.renderValue(i, f, focused, valW)))
 	}
 	if height > 0 && len(lines) > height {
 		if focusLine < fm.offset {
@@ -257,19 +259,27 @@ func (fm *form) render(width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-func (fm *form) renderValue(f *field, focused bool, w int) string {
+func (fm *form) renderValue(i int, f *field, focused bool, w int) string {
 	switch f.Kind {
 	case fText, fPassword:
-		f.Input.Width = max(w-2, 10)
-		v := f.Input.View()
-		if f.Browse && focused {
-			v += "  " + sMuted.Render("[Invio: sfoglia]")
+		const hint = "[sfoglia]"
+		if !f.Browse {
+			f.Input.Width = max(w-2, 10)
+			return f.Input.View()
 		}
-		return v
+		// il campo di testo occupa tutta la larghezza: va ridotto per lasciare
+		// spazio al pulsante, altrimenti finirebbe fuori dallo schermo
+		f.Input.Width = max(w-2-len(hint)-2, 10)
+		btn := sMuted
+		if focused {
+			btn = sKey
+		}
+		return f.Input.View() + "  " + zone.Mark(fmt.Sprintf("browse:%d", i), btn.Render(hint))
 	case fChoice:
 		lbl := f.Options[f.Sel].Label
 		if focused {
-			return sKey.Render("< ") + sSel.Render(" "+lbl+" ") + sKey.Render(" >")
+			return zone.Mark(fmt.Sprintf("fprev:%d", i), sKey.Render("< ")) + sSel.Render(" "+lbl+" ") +
+				zone.Mark(fmt.Sprintf("fnext:%d", i), sKey.Render(" >"))
 		}
 		return lbl
 	case fBool:
@@ -285,7 +295,7 @@ func (fm *form) renderValue(f *field, focused bool, w int) string {
 			if focused && idx == f.DayCur {
 				s = sSel.Render(s)
 			}
-			parts = append(parts, s)
+			parts = append(parts, zone.Mark(fmt.Sprintf("day:%d:%d", i, idx), s))
 		}
 		return strings.Join(parts, "  ")
 	}

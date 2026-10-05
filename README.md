@@ -106,6 +106,15 @@ solo agli amministratori.
 3. Selezionare il job e premere `s` per una **simulazione**, poi `l` per vedere l'elenco dei file
    che verrebbero copiati/cancellati.
 
+### Mouse
+
+Schede, comandi della barra in basso, righe degli elenchi, campi del form (caselle, scelte, giorni,
+pulsanti `[sfoglia]`) e finestre sono cliccabili; la rotella scorre elenchi, form e log.
+Un clic seleziona una riga, il doppio clic la apre.
+
+Con il mouse attivo, per selezionare e copiare testo nel terminale tenere premuto **Shift** durante il
+trascinamento. Per usare la TUI senza mouse: `vegasyncor --no-mouse` (oppure `VEGASYNCOR_NO_MOUSE=1`).
+
 ### Tasti principali
 
 | Scheda | Tasti |

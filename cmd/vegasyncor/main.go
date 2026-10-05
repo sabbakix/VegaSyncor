@@ -25,6 +25,7 @@ const usage = `VegaSyncor %s – sincronizzazione di cartelle di rete per backup
 
 Uso:
   vegasyncor                 apre l'interfaccia di gestione (TUI)
+  vegasyncor --no-mouse      apre la TUI senza supporto del mouse
   vegasyncor daemon          avvia il servizio (normalmente tramite systemd)
   vegasyncor status          mostra lo stato dei job
   vegasyncor check           verifica che il sistema possa montare le condivisioni SMB
@@ -40,8 +41,9 @@ func main() {
 	}
 	var err error
 	switch cmd {
-	case "tui":
-		err = tui.Run(api.NewClient(paths.Socket()), version)
+	case "tui", "--no-mouse":
+		mouse := cmd != "--no-mouse" && !hasArg("--no-mouse") && os.Getenv("VEGASYNCOR_NO_MOUSE") == ""
+		err = tui.Run(api.NewClient(paths.Socket()), version, mouse)
 	case "daemon":
 		err = runDaemon()
 	case "status":
@@ -216,4 +218,13 @@ func wrapText(s string, width int) []string {
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func hasArg(a string) bool {
+	for _, v := range os.Args[1:] {
+		if v == a {
+			return true
+		}
+	}
+	return false
 }

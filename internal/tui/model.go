@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	zone "github.com/lrstanley/bubblezone"
 
 	"vegasyncor/internal/api"
 	"vegasyncor/internal/config"
@@ -67,6 +68,9 @@ type Model struct {
 	logRun   string
 	logTitle string
 	logView  viewport.Model
+
+	lastClick   string // per riconoscere il doppio clic
+	lastClickAt time.Time
 }
 
 // ---------- messaggi ----------
@@ -104,9 +108,18 @@ type testMsg struct {
 	err  error
 }
 
-func Run(c *api.Client, version string) error {
+// Run avvia la TUI; mouse abilita clic e rotella (nei terminali la selezione del
+// testo richiede allora Shift + trascinamento).
+func Run(c *api.Client, version string, mouse bool) error {
+	zone.NewGlobal()
+	defer zone.Close()
+	zone.SetEnabled(mouse)
 	m := &Model{client: c, version: version}
-	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	opts := []tea.ProgramOption{tea.WithAltScreen()}
+	if mouse {
+		opts = append(opts, tea.WithMouseCellMotion())
+	}
+	_, err := tea.NewProgram(m, opts...).Run()
 	return err
 }
 
@@ -341,6 +354,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.info = &infoBox{title: "Test connessione: " + msg.name, body: body}
 		return m, nil
+
+	case tea.MouseMsg:
+		return m, m.handleMouse(msg)
 
 	case tea.KeyMsg:
 		if msg.String() == "ctrl+c" {
