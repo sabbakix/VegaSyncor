@@ -80,8 +80,9 @@ func setLanguage(configured string) {
 	i18n.SetLang(configured)
 }
 
-// warnings lists the problems of the environment (container, missing commands),
-// computed on every call so they follow the current language.
+// warnings lists the problems of the environment (container, missing commands) and
+// jobs with conflicting destinations, computed on every call so they follow the
+// current language. It takes d.mu: do not call it with the lock held.
 func (d *Daemon) warnings() []string {
 	var out []string
 	if !paths.DevMode() {
@@ -92,6 +93,11 @@ func (d *Daemon) warnings() []string {
 	if err := mount.EnsureTools(); err != nil {
 		out = append(out, err.Error())
 	}
+	d.mu.Lock()
+	for _, p := range d.cfg.DestConflicts() {
+		out = append(out, Tf("jobs %q and %q write to the same destination: a mirror deletes the other job's files", p[0].Name, p[1].Name))
+	}
+	d.mu.Unlock()
 	return out
 }
 

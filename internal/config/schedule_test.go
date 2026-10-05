@@ -63,3 +63,49 @@ func TestValidate(t *testing.T) {
 		t.Error("nested folders accepted")
 	}
 }
+
+func TestDestConflict(t *testing.T) {
+	c := &Config{Connections: []Connection{
+		{ID: "c1", Host: "NAS", Username: "a"},
+		{ID: "c2", Host: "nas", Username: "b"}, // same server, other user
+		{ID: "c3", Host: "OTHER", Username: "a"},
+	}}
+	smb := func(conn, share, path string) Location {
+		return Location{Type: LocSMB, ConnectionID: conn, Share: share, Path: path}
+	}
+	local := func(p string) Location { return Location{Type: LocLocal, Path: p} }
+	cases := []struct {
+		name         string
+		a, b         Location
+		modeA, modeB string
+		conflict     bool
+	}{
+		{"same folder, different connection to same host", smb("c1", "Backup", "Acc"), smb("c2", "backup", "acc"), ModeMirror, ModeAdditive, true},
+		{"nested (b inside a)", smb("c1", "Backup", ""), smb("c1", "Backup", "Acc"), ModeAdditive, ModeMirrorArchive, true},
+		{"nested (a inside b)", smb("c1", "Backup", "Acc/2026"), smb("c1", "Backup", "Acc"), ModeMirror, ModeMirror, true},
+		{"sibling with common prefix", smb("c1", "Backup", "A"), smb("c1", "Backup", "AB"), ModeMirror, ModeMirror, false},
+		{"different server", smb("c1", "Backup", "A"), smb("c3", "Backup", "A"), ModeMirror, ModeMirror, false},
+		{"different share", smb("c1", "Backup", "A"), smb("c1", "Archive", "A"), ModeMirror, ModeMirror, false},
+		{"two add-only jobs", smb("c1", "Backup", "A"), smb("c1", "Backup", "A"), ModeAdditive, ModeAdditive, false},
+		{"local nested", local("/srv/backup"), local("/srv/backup/acc"), ModeMirror, ModeAdditive, true},
+		{"local siblings", local("/srv/backup/a"), local("/srv/backup/ab"), ModeMirror, ModeMirror, false},
+		{"local vs smb", local("/srv/backup"), smb("c1", "Backup", ""), ModeMirror, ModeMirror, false},
+	}
+	for _, tc := range cases {
+		cfg := *c
+		cfg.Jobs = []Job{{ID: "b", Name: "B", Dest: tc.b, Mode: tc.modeB}}
+		j := Job{ID: "a", Name: "A", Dest: tc.a, Mode: tc.modeA}
+		if got := cfg.DestConflict(j) != nil; got != tc.conflict {
+			t.Errorf("%s: conflict = %v, want %v", tc.name, got, tc.conflict)
+		}
+		cfg.Jobs = append(cfg.Jobs, j)
+		if got := len(cfg.DestConflicts()) == 1; got != tc.conflict {
+			t.Errorf("%s: DestConflicts = %v", tc.name, cfg.DestConflicts())
+		}
+	}
+	// a job is never in conflict with itself (editing an existing job)
+	self := &Config{Jobs: []Job{{ID: "a", Dest: local("/srv/b"), Mode: ModeMirror}}}
+	if self.DestConflict(self.Jobs[0]) != nil {
+		t.Error("job in conflict with itself")
+	}
+}

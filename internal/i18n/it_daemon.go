@@ -61,3 +61,10 @@ func init() {
 		"… (log truncated, only the last lines are shown)": "… (log troncato, vengono mostrate solo le ultime righe)",
 	})
 }
+
+func init() {
+	addItalian(map[string]string{
+		"the destination overlaps with the job %q: a mirror would delete the other job's files": "la destinazione si sovrappone a quella del job %q: un mirror cancellerebbe i file dell'altro job",
+		"jobs %q and %q write to the same destination: a mirror deletes the other job's files":  "i job %q e %q scrivono nella stessa destinazione: un mirror cancella i file dell'altro job",
+	})
+}

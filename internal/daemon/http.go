@@ -154,6 +154,10 @@ func (d *Daemon) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
+	if other := d.cfg.DestConflict(j); other != nil {
+		fail(w, 400, errors.New(Tf("the destination overlaps with the job %q: a mirror would delete the other job's files", other.Name)))
+		return
+	}
 	for _, o := range d.cfg.Jobs {
 		if o.ID != j.ID && strings.EqualFold(o.Name, j.Name) {
 			fail(w, 400, errors.New(T("a job with this name already exists")))

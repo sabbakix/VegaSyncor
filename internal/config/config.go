@@ -292,3 +292,62 @@ func (j *Job) Validate(c *Config) error {
 	j.Excludes = ex
 	return j.Schedule.Validate()
 }
+
+// DestConflict returns another job whose destination is the same folder as j's, or
+// contains it / is contained in it, when at least one of the two is a mirror: each
+// run would delete (or archive) the other job's files. Two "Add only" jobs may
+// share a folder. Returns nil if there is no conflict.
+func (c *Config) DestConflict(j Job) *Job {
+	for i := range c.Jobs {
+		o := &c.Jobs[i]
+		if o.ID == j.ID || (!isMirror(j.Mode) && !isMirror(o.Mode)) {
+			continue
+		}
+		if c.locationsOverlap(j.Dest, o.Dest) {
+			return o
+		}
+	}
+	return nil
+}
+
+// DestConflicts lists the pairs of jobs already in the configuration whose
+// destinations conflict (see DestConflict), each pair once.
+func (c *Config) DestConflicts() [][2]*Job {
+	var out [][2]*Job
+	for i := range c.Jobs {
+		for k := i + 1; k < len(c.Jobs); k++ {
+			a, b := &c.Jobs[i], &c.Jobs[k]
+			if (isMirror(a.Mode) || isMirror(b.Mode)) && c.locationsOverlap(a.Dest, b.Dest) {
+				out = append(out, [2]*Job{a, b})
+			}
+		}
+	}
+	return out
+}
+
+func isMirror(mode string) bool { return mode == ModeMirror || mode == ModeMirrorArchive }
+
+// locationsOverlap reports whether a and b are the same folder or one contains
+// the other. SMB locations are compared by host and share (not by connection: two
+// connections with different users can point to the same server), case-insensitively
+// like Windows and Samba; local paths are compared exactly.
+func (c *Config) locationsOverlap(a, b Location) bool {
+	if a.Type != b.Type {
+		return false
+	}
+	pa, pb := a.Path, b.Path
+	if a.Type == LocSMB {
+		ca, cb := c.Connection(a.ConnectionID), c.Connection(b.ConnectionID)
+		if ca == nil || cb == nil || !strings.EqualFold(ca.Host, cb.Host) || !strings.EqualFold(a.Share, b.Share) {
+			return false
+		}
+		pa, _ = CleanSubPath(pa)
+		pb, _ = CleanSubPath(pb)
+		// leading "/" so that the share root ("") contains every subfolder
+		pa, pb = "/"+strings.ToLower(pa), "/"+strings.ToLower(pb)
+	} else {
+		pa, pb = filepath.Clean(pa), filepath.Clean(pb)
+	}
+	pa, pb = strings.TrimSuffix(pa, "/")+"/", strings.TrimSuffix(pb, "/")+"/"
+	return strings.HasPrefix(pa, pb) || strings.HasPrefix(pb, pa)
+}

@@ -185,6 +185,10 @@ VegaSyncor detects this: it reports it during installation, prominently in the T
   the next run.
 - Automatically excluded: `Thumbs.db`, `desktop.ini`, `~$*` (Office temporary files), `.DS_Store`,
   `$RECYCLE.BIN`, `System Volume Information`.
+- Several jobs can read the same share at the same time: each run mounts it on its own mount
+  point. Destinations must not overlap, though: VegaSyncor refuses to save a job whose destination
+  is the same folder as another job's (or inside it) when one of the two is a mirror, because each
+  run would delete the other job's files. Two *Add only* jobs may share a destination.
 - Several jobs can run in parallel (`max_parallel` in `config.json`, default 2). If a scheduled run
   finds the previous run of the same job still in progress, it is skipped and noted in the history.
 - If the service stops abruptly during a copy (reboot, power loss), the run shows up in the history
