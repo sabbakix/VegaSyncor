@@ -20,8 +20,9 @@ the clock (or the `L` key).
   temporary `0600` file in `/run`, deleted right after mounting.
 - **Three modes per job**
   - *Mirror + archive* (default): the destination is identical to the source, but deleted or
-    overwritten files are moved to `.vegasyncor-archivio/YYYY-MM-DD_hhmmss/` in the destination and
-    kept for N days.
+    overwritten files are moved to `.vegasyncor-archive/YYYY-MM-DD_hhmmss/` in the destination and
+    kept for N days. (Up to v0.2 the folder was called `.vegasyncor-archivio`: it is renamed
+    automatically on the next run.)
   - *Mirror*: exact copy, files deleted at the source are deleted.
   - *Add only*: never deletes anything in the destination.
 - **Destination**: local (server disk, USB disk, already mounted NAS) or an SMB share.

@@ -124,6 +124,14 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 		}
 	}
 
+	if !r.DryRun {
+		if moved, err := syncer.MigrateArchive(dst); err != nil {
+			logf(Tf("warning: renaming %s to %s: %v", config.LegacyArchiveDirName, config.ArchiveDirName, err))
+		} else if moved {
+			logf(Tf("archive folder renamed: %s -> %s", config.LegacyArchiveDirName, config.ArchiveDirName))
+		}
+	}
+
 	d.setPhase(r, T("synchronizing"))
 	opts := syncer.Options{
 		Src: src, Dst: dst, Mode: j.Mode, Excludes: j.Excludes, DryRun: r.DryRun,
