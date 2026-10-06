@@ -43,13 +43,15 @@ the clock (or the `L` key).
 ## Screenshots
 
 **Creating/editing a sync**: the box at the top always summarises *source ──> destination*, with
-the read-only indicator; the bar at the bottom describes the active field.
+the read-only indicator; the bar at the bottom describes the active field, and changed fields are
+marked with `*` until you save.
 
 ![Job edit form with source and destination summary](docs/screenshots/02-edit-job.png)
 
-**Choosing a folder**: shares and subfolders are browsed directly on the remote PC or server.
+**Choosing a folder**: shares and subfolders are browsed directly on the remote PC or server; a new
+destination folder can be created on the spot (`n`).
 
-![Window to browse the folders of a network share](docs/screenshots/03-browse-folders.png)
+![Window to browse the folders of a network share, creating a new folder](docs/screenshots/03-browse-folders.png)
 
 **Dry run**: before enabling a job you see exactly what would be copied, updated or deleted.
 
@@ -58,6 +60,11 @@ the read-only indicator; the bar at the bottom describes the active field.
 **Connections**: saved, encrypted credentials, reusable by several jobs.
 
 ![List of saved SMB connections](docs/screenshots/04-connections.png)
+
+**Export / import**: the whole configuration, passwords included, in one encrypted file to move the
+service to a new server.
+
+![Export form with file name and password](docs/screenshots/08-export.png)
 
 **History**: outcome of every run, with access to the detailed log.
 

@@ -55,7 +55,7 @@ func newExportForm() *form {
 		section(T("Protection")),
 		newPassword("pass", T("Password"), Tf("at least %d characters", transfer.MinPassphrase)).
 			withHelp(T("encrypts the file (AES-256): it will be asked when importing; without it the file cannot be opened")),
-		newPassword("pass2", T("Repeat password"), ""),
+		newPassword("pass2", T("Repeat password"), "").withHelp(T("type the same password again")),
 	}}
 	fm.init()
 	return fm
