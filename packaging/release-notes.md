@@ -11,7 +11,7 @@ curl -fsSL https://github.com/sabbakix/VegaSyncor/releases/latest/download/vegas
 The script:
 - detects the architecture (amd64 / arm64);
 - downloads the `.deb` package and verifies its checksum;
-- installs the dependencies (`rsync`, `cifs-utils`, `smbclient`);
+- installs the dependencies (`rsync`, `cifs-utils`, `smbclient`, `nftables`);
 - starts the `vegasyncor` service (run it again to update).
 
 ### Manual install of the package
@@ -19,7 +19,7 @@ The script:
 ```bash
 # amd64 (x86_64 PCs/servers). For Raspberry Pi 4/5 and ARM servers use _arm64.deb
 wget https://github.com/sabbakix/VegaSyncor/releases/download/v{{VERSION}}/vegasyncor_{{VERSION}}_amd64.deb
-sudo apt install ./vegasyncor_{{VERSION}}_amd64.deb smbclient
+sudo apt install ./vegasyncor_{{VERSION}}_amd64.deb smbclient nftables
 ```
 
 ### Without the package (other distributions with systemd)
@@ -47,7 +47,7 @@ journalctl -u vegasyncor -f
 
 The language (English / Italian) can be switched with the `EN|IT` selector next to the clock or the `L` key.
 
-> ⚠️ **Back up `/etc/vegasyncor/master.key`**: without the key the saved passwords can no longer be read.
+> ⚠️ **Back up `/etc/vegasyncor/master.key`** (or keep an export made with `vegasyncor export`): without them the saved passwords can no longer be read.
 
 ## Features
 
@@ -66,6 +66,8 @@ The language (English / Italian) can be switched with the `EN|IT` selector next 
 - **Dry run** with a detailed list of the changes.
 - **Safety block**: a mirror with an empty source is stopped so the backup is not wiped.
 - Incremental copy with `rsync`, bandwidth limit, exclusions, history and log of every run.
+- **Firewall tab**: open ports and active connections, plus a lockdown (incoming only SSH from the admin hosts, outgoing only SMB to the backed-up hosts) with automatic rollback if a change is not confirmed.
+- **Export / import** of the whole configuration (connections with passwords, syncs, settings) as a password-protected encrypted file, to move the service to a new server: `vegasyncor export` on the old server, `vegasyncor import FILE` on the new one.
 
 ## Release files
 
