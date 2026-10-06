@@ -117,3 +117,28 @@ func TestPrune(t *testing.T) {
 		t.Fatalf("%v %v", removed, err)
 	}
 }
+
+// With the same size and modification time a change is seen only with Checksum.
+func TestChecksum(t *testing.T) {
+	src, dst := t.TempDir(), t.TempDir()
+	write(t, filepath.Join(src, "f.txt"), "new!")
+	write(t, filepath.Join(dst, "f.txt"), "old!")
+	when := time.Now().Add(-time.Hour).Truncate(time.Second)
+	os.Chtimes(filepath.Join(src, "f.txt"), when, when)
+	os.Chtimes(filepath.Join(dst, "f.txt"), when, when)
+	var log bytes.Buffer
+	o := Options{Src: src, Dst: dst, Mode: config.ModeMirror, RunStamp: "2026-10-01_220000"}
+	if _, err := Run(context.Background(), o, &log, nil); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dst, "f.txt")); string(b) != "old!" {
+		t.Fatal("quick check copied a file with the same size and time")
+	}
+	o.Checksum = true
+	if _, err := Run(context.Background(), o, &log, nil); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dst, "f.txt")); string(b) != "new!" {
+		t.Error("checksum did not detect the changed contents")
+	}
+}

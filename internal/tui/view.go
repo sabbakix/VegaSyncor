@@ -349,6 +349,9 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 			mode += " " + T("(keeps forever)")
 		}
 	}
+	if j.Job.Checksum {
+		mode += sMuted.Render(" · " + T("compares contents (checksum)"))
+	}
 	lines = append(lines, lbl(T("Mode"))+mode)
 	sched := j.Job.Schedule.Describe()
 	if !j.Job.Enabled {

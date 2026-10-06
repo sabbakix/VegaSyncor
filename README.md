@@ -31,8 +31,8 @@ the clock (or the `L` key).
 - **Dry run**: shows what would be copied and deleted without touching anything.
 - **Empty-source protection**: if the source turns out empty (e.g. emptied share or failed mount) a
   mirror is blocked, so the backup is not wiped.
-- Incremental copy with `rsync` (differences only), bandwidth limit, exclusions, history and
-  detailed log of every run.
+- Incremental copy with `rsync` (differences only), bandwidth limit, exclusions, optional content
+  comparison (checksum), history and detailed log of every run.
 - **Mouse support** in the TUI (tabs, commands, lists, form fields), alongside the keyboard.
 - **Firewall** for the backup server: a *Firewall* tab lists open ports and active connections and
   applies a lockdown (incoming only SSH from the admin hosts, outgoing only SMB to the backed-up hosts)
@@ -271,6 +271,13 @@ VegaSyncor detects this: it reports it during installation, prominently in the T
 
 ## Technical notes
 
+- **How changed files are found**: a file is copied when its size or modification time differs
+  from the copy in the destination (2 seconds of tolerance, because SMB and FAT round the times);
+  otherwise it is skipped without being read. Changed files are copied whole.
+- **Compare contents (checksum)**, per job: every file is read on both sides and compared by
+  content, so even a change that keeps the same size and date is found. It is much slower and
+  reads the whole share over the network at every run: use it for small, critical folders, or on
+  a second job scheduled rarely (e.g. weekly) as a verification pass.
 - File modification times are preserved; permissions and owners are not copied (they have no
   reliable equivalent between Windows/SMB and Linux).
 - If a file is locked (e.g. open in Excel) the job ends **with warnings** and the file is copied on

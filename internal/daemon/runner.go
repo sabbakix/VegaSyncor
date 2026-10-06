@@ -85,6 +85,9 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 	logf(fmt.Sprintf("Job %q (%s) – %s", j.Name, config.ModeLabel(j.Mode), kind))
 	logf(Tf("Source:      %s", j.Source.Display(cfg)) + ro)
 	logf(Tf("Destination: %s", j.Dest.Display(cfg)))
+	if j.Checksum {
+		logf(T("Comparison:  file contents (checksum): every file is read on both sides"))
+	}
 
 	d.setPhase(r, T("connecting to source"))
 	src, sm, err := d.prepare(ctx, cfg, j.ID+"-src", j.Source, j.SourceRO)
@@ -127,7 +130,7 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 	d.setPhase(r, T("synchronizing"))
 	opts := syncer.Options{
 		Src: src, Dst: dst, Mode: j.Mode, Excludes: j.Excludes, DryRun: r.DryRun,
-		BandwidthKBps: j.BandwidthKBps, RunStamp: r.Start.Format(syncer.StampFormat),
+		BandwidthKBps: j.BandwidthKBps, Checksum: j.Checksum, RunStamp: r.Start.Format(syncer.StampFormat),
 	}
 	res, err := syncer.Run(ctx, opts, lf, func(p syncer.Progress) {
 		d.mu.Lock()

@@ -89,6 +89,10 @@ type Job struct {
 	AllowEmptySource bool `json:"allow_empty_source,omitempty"`
 	// BandwidthKBps limits the bandwidth in KB/s (0 = unlimited).
 	BandwidthKBps int `json:"bandwidth_kbps,omitempty"`
+	// Checksum compares the contents of the files (rsync --checksum) instead of
+	// size and modification time: detects every change but reads all the files
+	// on both sides at every run.
+	Checksum bool `json:"checksum,omitempty"`
 }
 
 type Config struct {

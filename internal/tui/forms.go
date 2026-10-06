@@ -113,6 +113,8 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		newBool("allow_empty", T("Allow empty source"), j.AllowEmptySource).
 			when(func(f *form) bool { return f.choice("mode") != config.ModeAdditive }).
 			withHelp(T("normally a mirror with an empty source is blocked so the backup is not wiped")),
+		newBool("checksum", T("Compare contents"), j.Checksum).
+			withHelp(T("compares the file contents (checksum): finds every change, even with unchanged size and date, but reads all the files on both sides at every run (much slower on large shares); off = compare size and modification time")),
 		newText("excludes", T("Exclude"), strings.Join(j.Excludes, ", "), T("e.g. *.tmp, Cache/")).
 			withHelp(T("comma-separated patterns (Thumbs.db, desktop.ini, ~$* are already excluded)")),
 		newText("bwlimit", T("Bandwidth limit (KB/s)"), bw, T("empty = unlimited")).
@@ -194,6 +196,7 @@ func jobFromForm(fm *form, id string) (config.Job, error) {
 		SourceRO:         fm.get("src_ro").Bool,
 		Mode:             fm.choice("mode"),
 		AllowEmptySource: fm.get("allow_empty").Bool,
+		Checksum:         fm.get("checksum").Bool,
 	}
 	loc := func(p string) config.Location {
 		l := config.Location{Type: fm.choice(p + "_type"), Path: fm.val(p + "_path")}

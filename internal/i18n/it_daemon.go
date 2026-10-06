@@ -71,7 +71,8 @@ func init() {
 
 func init() {
 	addItalian(map[string]string{
-		"a folder with this name already exists": "esiste già una cartella con questo nome",
-		"creating the folder: %w":                "creazione della cartella: %w",
+		"a folder with this name already exists":                                  "esiste già una cartella con questo nome",
+		"creating the folder: %w":                                                 "creazione della cartella: %w",
+		"Comparison:  file contents (checksum): every file is read on both sides": "Confronto:    contenuto dei file (checksum): ogni file viene letto su entrambi i lati",
 	})
 }

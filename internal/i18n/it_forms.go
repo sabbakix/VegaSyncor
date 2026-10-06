@@ -110,6 +110,9 @@ func init() {
 		"← → to change the choice": "← → per cambiare scelta",
 		"space to toggle":          "spazio per attivare o disattivare",
 		"← → to move, space to select · w = Mon-Fri · a = all/none": "← → per spostarsi, spazio per selezionare · w = lun-ven · a = tutti/nessuno",
-		"[browse]": "[sfoglia]",
+		"[browse]":         "[sfoglia]",
+		"Compare contents": "Confronta contenuto",
+		"compares the file contents (checksum): finds every change, even with unchanged size and date, but reads all the files on both sides at every run (much slower on large shares); off = compare size and modification time": "confronta il contenuto dei file (checksum): rileva ogni modifica, anche con dimensione e data invariate, ma legge tutti i file su entrambi i lati a ogni esecuzione (molto più lento su condivisioni grandi); disattivo = confronta dimensione e data di modifica",
+		"compares contents (checksum)": "confronta il contenuto (checksum)",
 	})
 }

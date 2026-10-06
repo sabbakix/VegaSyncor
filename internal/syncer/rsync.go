@@ -27,6 +27,7 @@ type Options struct {
 	Excludes      []string
 	DryRun        bool
 	BandwidthKBps int
+	Checksum      bool   // compare contents instead of size and modification time
 	RunStamp      string // used for the archive folder
 }
 
@@ -76,6 +77,9 @@ func BuildArgs(o Options) []string {
 	}
 	if o.DryRun {
 		args = append(args, "--dry-run")
+	}
+	if o.Checksum {
+		args = append(args, "--checksum")
 	}
 	if o.BandwidthKBps > 0 {
 		args = append(args, fmt.Sprintf("--bwlimit=%d", o.BandwidthKBps))
