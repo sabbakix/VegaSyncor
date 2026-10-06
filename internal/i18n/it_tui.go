@@ -19,11 +19,11 @@ func init() {
 
 		// command bars
 		"n new · enter edit · r run · s dry-run · x stop · p pause · l log · d delete · tab next tab · L language · q quit": "n nuova · invio modifica · r avvia · s simula · x interrompi · p sospendi · l log · d elimina · tab scheda · L lingua · q esci",
-		"n new · tab next tab · L language · q quit":                                             "n nuova · tab scheda · L lingua · q esci",
-		"n new · enter edit · t test connection · d delete · tab next tab · L language · q quit": "n nuova · invio modifica · t prova connessione · d elimina · tab scheda · L lingua · q esci",
-		"↑↓ scroll · enter open log · r refresh · tab next tab · L language · q quit":            "↑↓ scorri · invio apri log · r aggiorna · tab scheda · L lingua · q esci",
-		"↑↓ scroll · PgUp/PgDn page · g/G top/bottom · r reload · esc close":                     "↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · r ricarica · esc chiudi",
-		"↑↓ field · ←→ choose · space toggle · ctrl+s save · esc cancel":                         "↑↓ campo · ←→ scegli · spazio attiva · ctrl+s salva · esc annulla",
+		"n new · tab next tab · L language · q quit": "n nuova · tab scheda · L lingua · q esci",
+		"n new · enter edit · t test connection · d delete · E export · I import · tab next tab · L language · q quit": "n nuova · invio modifica · t prova connessione · d elimina · E esporta · I importa · tab scheda · L lingua · q esci",
+		"↑↓ scroll · enter open log · r refresh · tab next tab · L language · q quit":                                  "↑↓ scorri · invio apri log · r aggiorna · tab scheda · L lingua · q esci",
+		"↑↓ scroll · PgUp/PgDn page · g/G top/bottom · r reload · esc close":                                           "↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · r ricarica · esc chiudi",
+		"↑↓ field · ←→ choose · space toggle · ctrl+s save · esc cancel":                                               "↑↓ campo · ←→ scegli · spazio attiva · ctrl+s salva · esc annulla",
 		"enter close":               "invio chiudi",
 		"y yes · n no":              "s sì · n no",
 		"enter choose · esc cancel": "invio scegli · esc annulla",

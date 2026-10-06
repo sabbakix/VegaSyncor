@@ -18,6 +18,7 @@ import (
 	"vegasyncor/internal/config"
 	"vegasyncor/internal/firewall"
 	"vegasyncor/internal/syncer"
+	"vegasyncor/internal/transfer"
 )
 
 const (
@@ -132,6 +133,40 @@ type Settings struct {
 	Language string `json:"language"`
 }
 
+// ExportRequest asks for the whole configuration encrypted with Passphrase.
+type ExportRequest struct {
+	Passphrase string `json:"passphrase"`
+}
+
+// ExportResponse carries the content of the export file.
+type ExportResponse struct {
+	Data []byte `json:"data"`
+}
+
+// ImportRequest replaces the configuration with the content of an export file.
+type ImportRequest struct {
+	Data       []byte `json:"data"`
+	Passphrase string `json:"passphrase"`
+}
+
+type ImportResponse struct {
+	transfer.Result
+	Host    string    `json:"host"`    // server the file was exported from
+	Created time.Time `json:"created"` // when it was exported
+}
+
+// Summary describes the result of an import.
+func (r *ImportResponse) Summary() string {
+	s := Tf("Imported %d connections and %d syncs.", r.Connections, r.Jobs)
+	switch {
+	case r.FirewallKept:
+		s += " " + T("The firewall of this server is active: its settings were kept.")
+	case r.FirewallImported:
+		s += " " + T("The firewall settings were imported but the firewall is off: check them in the Firewall tab before enabling it.")
+	}
+	return s
+}
+
 type BrowseRequest struct {
 	Location config.Location `json:"location"`
 }
@@ -244,6 +279,18 @@ func (c *Client) RevertFirewall() error { return c.do("POST", "/api/firewall/rev
 
 func (c *Client) SetLanguage(code string) error {
 	return c.do("POST", "/api/settings", Settings{Language: code}, nil)
+}
+
+// Export returns the configuration encrypted with passphrase (content of the file).
+func (c *Client) Export(passphrase string) ([]byte, error) {
+	var out ExportResponse
+	return out.Data, c.do("POST", "/api/export", ExportRequest{Passphrase: passphrase}, &out)
+}
+
+// Import replaces the whole configuration with an export file.
+func (c *Client) Import(data []byte, passphrase string) (*ImportResponse, error) {
+	var out ImportResponse
+	return &out, c.do("POST", "/api/import", ImportRequest{Data: data, Passphrase: passphrase}, &out)
 }
 
 func (c *Client) SaveJob(j config.Job) (*config.Job, error) {

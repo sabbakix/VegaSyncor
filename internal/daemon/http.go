@@ -66,6 +66,9 @@ func (d *Daemon) serveAPI() (*http.Server, error) {
 	mux.HandleFunc("DELETE /api/connections/{id}", d.handleDeleteConn)
 	mux.HandleFunc("POST /api/connections/{id}/test", d.handleTestConn)
 
+	mux.HandleFunc("POST /api/export", d.handleExport)
+	mux.HandleFunc("POST /api/import", d.handleImport)
+
 	mux.HandleFunc("POST /api/browse", d.handleBrowse)
 	mux.HandleFunc("POST /api/mkdir", d.handleMkdir)
 	mux.HandleFunc("GET /api/history", d.handleHistory)

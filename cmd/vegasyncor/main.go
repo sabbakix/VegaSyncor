@@ -36,6 +36,8 @@ Usage:
   vegasyncor run <job>       runs a job now (name or ID)
   vegasyncor dry-run <job>   simulates a job without changing anything
   vegasyncor firewall off    disables the firewall (emergency, e.g. from the console)
+  vegasyncor export [file]   exports the whole configuration, encrypted with a password
+  vegasyncor import <file>   replaces the configuration with an export (new server)
   vegasyncor version         shows the version
 
 The language follows the service setting; VEGASYNCOR_LANG=en|it overrides it.
@@ -70,6 +72,10 @@ func main() {
 		} else {
 			err = firewallOff()
 		}
+	case "export":
+		err = exportConfig(os.Args[2:])
+	case "import":
+		err = importConfig(os.Args[2:])
 	case "version", "--version", "-v":
 		fmt.Println("vegasyncor", version)
 	case "help", "--help", "-h":

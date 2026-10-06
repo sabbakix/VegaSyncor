@@ -37,6 +37,8 @@ the clock (or the `L` key).
 - **Firewall** for the backup server: a *Firewall* tab lists open ports and active connections and
   applies a lockdown (incoming only SSH from the admin hosts, outgoing only SMB to the backed-up hosts)
   with automatic rollback if a change is not confirmed.
+- **Export / import** of the whole configuration (connections with their passwords, syncs,
+  settings) as a password-protected encrypted file, to move the service to a new server.
 
 ## Screenshots
 
@@ -103,6 +105,8 @@ sudo vegasyncor                      # opens the TUI
 sudo vegasyncor status               # short status of the jobs
 sudo vegasyncor check                # checks that the system can mount SMB shares
 sudo vegasyncor firewall off         # disables the firewall (emergency)
+sudo vegasyncor export               # exports the configuration to an encrypted file
+sudo vegasyncor import FILE.vsconf   # imports it (e.g. on a new server)
 sudo vegasyncor run "Accounting"     # runs a job now and shows its progress
 sudo vegasyncor dry-run "Accounting" # dry run
 journalctl -u vegasyncor -f          # service log
@@ -156,7 +160,7 @@ are. To keep the terminal's own background instead: `VEGASYNCOR_THEME=terminal v
 | Tab | Keys |
 |---|---|
 | Syncs | `n` new · `Enter` edit · `r` run now · `s` dry run · `x` stop · `p` pause/resume · `l` log · `d` delete |
-| Connections | `n` new · `Enter` edit · `t` test · `d` delete |
+| Connections | `n` new · `Enter` edit · `t` test · `d` delete · `E` export · `I` import |
 | History | `Enter` opens the run log · `r` refresh |
 | Firewall | `e` settings / lockdown · `a` add rule · `Enter` edit rule or add one from a port/connection · `d` delete rule · `r` refresh |
 | Form | `↑↓`/`Tab` field · `←→` choice · `Space` toggle · `Enter` browse · `Ctrl+S` save · `Esc` cancel |
@@ -201,6 +205,30 @@ rules, so they win.
 
 Requires `nftables` (installed by the installer; `vegasyncor check` reports it). In LXC containers
 the container must allow nftables (privileged containers usually do).
+
+## Moving to a new server (export / import)
+
+1. On the old server: `sudo vegasyncor export` (or `E` in the *Connections* tab). Choose a password
+   (at least 8 characters): it protects the file, which contains the connection passwords. The file
+   `vegasyncor-<host>-<date>.vsconf` is created with permissions `0600`.
+2. Copy the file to the new server (e.g. `scp`) and install VegaSyncor there.
+3. On the new server: `sudo vegasyncor import vegasyncor-<host>-<date>.vsconf` (or `I` in the
+   *Connections* tab) and enter the same password.
+
+What is moved: connections with their passwords, syncs, language, parallel jobs and firewall
+settings. The import **replaces** the whole configuration of the new server (it is refused while
+syncs are running); the history is not moved.
+
+- **Security**: the file is encrypted with AES-256-GCM using a key derived from the password with
+  Argon2id; the clear-text header (host, date) is authenticated too, so any change to the file is
+  detected. The master key of the old server is never exported: on import the passwords are
+  re-encrypted with the master key of the new server. Without the password the file is useless; if
+  the password is lost the file cannot be recovered.
+- **Firewall**: the imported firewall settings are stored but left **off** (the admin hosts and the
+  network of the new server may differ): check them in the *Firewall* tab and enable them. If the
+  firewall of the new server is already active, its settings are kept.
+- Both commands work also when the service is stopped (they then read/write the configuration
+  directly). `vegasyncor import FILE --yes` skips the confirmation question.
 
 ## Containers (LXC, Proxmox, Docker)
 
@@ -255,7 +283,7 @@ VegaSyncor detects this: it reports it during installation, prominently in the T
 
 ## Development
 
-Requires Go ≥ 1.24.
+Requires Go ≥ 1.26.
 
 ```bash
 make test     # vet + tests
@@ -310,12 +338,13 @@ its table.
 
 | Package | Role |
 |---|---|
-| `cmd/vegasyncor` | commands (`daemon`, TUI, `status`, `check`, `run`) |
+| `cmd/vegasyncor` | commands (`daemon`, TUI, `status`, `check`, `run`, `export`, `import`) |
 | `internal/daemon` | scheduler, job execution, HTTP API over a Unix socket |
 | `internal/tui` | Bubble Tea interface |
 | `internal/config` | data model, validation, schedules |
 | `internal/i18n` | translations (English → Italian) |
 | `internal/secrets` | AES-256-GCM encryption of passwords |
+| `internal/transfer` | encrypted export files (Argon2id + AES-256-GCM), import into a new server |
 | `internal/mount` | CIFS mounts / read-only binds, share listing, environment checks |
 | `internal/syncer` | rsync execution, progress, archive |
 | `internal/firewall` | nftables rules (lockdown preset), counters, open ports and connections (`ss`) |

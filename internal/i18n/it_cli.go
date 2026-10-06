@@ -13,6 +13,8 @@ Usage:
   vegasyncor run <job>       runs a job now (name or ID)
   vegasyncor dry-run <job>   simulates a job without changing anything
   vegasyncor firewall off    disables the firewall (emergency, e.g. from the console)
+  vegasyncor export [file]   exports the whole configuration, encrypted with a password
+  vegasyncor import <file>   replaces the configuration with an export (new server)
   vegasyncor version         shows the version
 
 The language follows the service setting; VEGASYNCOR_LANG=en|it overrides it.
@@ -27,6 +29,8 @@ Uso:
   vegasyncor run <job>       avvia subito un job (nome o ID)
   vegasyncor dry-run <job>   simula un job senza modificare nulla
   vegasyncor firewall off    disattiva il firewall (emergenza, es. dalla console)
+  vegasyncor export [file]   esporta tutta la configurazione, cifrata con una password
+  vegasyncor import <file>   sostituisce la configurazione con un'esportazione (nuovo server)
   vegasyncor version         mostra la versione
 
 La lingua segue l'impostazione del servizio; VEGASYNCOR_LANG=en|it la sostituisce.

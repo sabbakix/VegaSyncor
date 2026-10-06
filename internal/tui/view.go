@@ -405,13 +405,15 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 // ---------- scheda connessioni ----------
 
 func (m *Model) viewConns() (string, string) {
-	help := T("n new · enter edit · t test connection · d delete · tab next tab · L language · q quit")
+	help := T("n new · enter edit · t test connection · d delete · E export · I import · tab next tab · L language · q quit")
 	conns := m.conns()
 	if len(conns) == 0 {
 		return "\n  " + sBold.Render(T("No saved connections.")) + "\n\n" +
-			"  " + T("A connection holds the address of the PC/server and the login credentials.") + "\n" +
-			"  " + T("The password is encrypted (AES-256) and is never visible after saving.") + "\n\n" +
-			"  " + Tf("Press %s to add one.", sKey.Render("n")) + "\n", T("n new · tab next tab · L language · q quit")
+				"  " + T("A connection holds the address of the PC/server and the login credentials.") + "\n" +
+				"  " + T("The password is encrypted (AES-256) and is never visible after saving.") + "\n\n" +
+				"  " + Tf("Press %s to add one.", sKey.Render("n")) + "\n\n" +
+				"  " + Tf("Moving from another server? Press %s to import its configuration.", sKey.Render("I")) + "\n",
+			T("n new · I import · tab next tab · L language · q quit")
 	}
 	used := map[string]int{}
 	for _, j := range m.jobs() {

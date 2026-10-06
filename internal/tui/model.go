@@ -309,6 +309,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.fetchStatus()
 
+	case exportMsg, importMsg:
+		return m, m.transferDone(msg)
+
 	case savedMsg:
 		m.saving = false
 		if msg.err != nil {
@@ -582,6 +585,10 @@ func (m *Model) connsKey(key string) tea.Cmd {
 			cc := *c
 			m.form, m.formKind, m.formID = newConnForm(&cc), "conn", c.ID
 		}
+	case "E":
+		m.form, m.formKind, m.formID = newExportForm(), "export", ""
+	case "I":
+		m.form, m.formKind, m.formID = newImportForm(), "import", ""
 	case "t":
 		if c != nil {
 			id, name := c.ID, c.Name
@@ -650,6 +657,8 @@ func (m *Model) saveForm() tea.Cmd {
 	switch m.formKind {
 	case "fwsettings", "fwrule":
 		return m.saveFirewallForm()
+	case "export", "import":
+		return m.saveTransferForm()
 	case "job":
 		j, err := jobFromForm(fm, m.formID)
 		if err != nil {
