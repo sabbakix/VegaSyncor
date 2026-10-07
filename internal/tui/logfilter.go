@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
 )
@@ -248,9 +250,12 @@ func (e logEntry) visible(f logFilter) bool {
 }
 
 // logCounts returns the number of rows of every filter (lfAll: all the file rows).
-func logCounts(es []logEntry) [logFilterCount]int {
+func logCounts(es []logEntry, term string) [logFilterCount]int {
 	var c [logFilterCount]int
 	for _, e := range es {
+		if !e.matches(term) {
+			continue
+		}
 		if e.kind >= ekUnchanged && e.kind != ekMovedFrom {
 			c[lfAll]++
 		}
@@ -263,12 +268,40 @@ func logCounts(es []logEntry) [logFilterCount]int {
 	return c
 }
 
-// renderLog shows the rows of a filter (lfAll is the plain log, see colorizeLog).
-func renderLog(es []logEntry, f logFilter) string {
+// matches reports whether the row contains term (already lower case; "" matches
+// everything); a moved row matches on the old path too.
+func (e logEntry) matches(term string) bool {
+	if term == "" {
+		return true
+	}
+	return strings.Contains(strings.ToLower(e.line), term) || strings.Contains(strings.ToLower(e.path), term) ||
+		strings.Contains(strings.ToLower(e.from), term)
+}
+
+// searchLines keeps the lines of the plain log that contain term.
+func searchLines(text, term string) (string, int) {
+	if term == "" {
+		return colorizeLog(text), strings.Count(text, "\n") + 1
+	}
+	var keep []string
+	for _, l := range strings.Split(text, "\n") {
+		if strings.Contains(strings.ToLower(l), term) {
+			keep = append(keep, l)
+		}
+	}
+	if len(keep) == 0 {
+		return sMuted.Render(Tf("No rows contain %q.", term)) + "\n", 0
+	}
+	return colorizeLog(strings.Join(keep, "\n")), len(keep)
+}
+
+// renderLog shows the rows of a filter (lfAll is the plain log, see searchLines)
+// that contain term, and returns how many file rows it shows.
+func renderLog(es []logEntry, f logFilter, term string) (string, int) {
 	var b strings.Builder
 	rows := 0
 	for _, e := range es {
-		if !e.visible(f) {
+		if !e.visible(f) || !e.matches(term) {
 			continue
 		}
 		tag := func(s lipgloss.Style, sign, word string) string { return s.Render(sign + " " + pad(word, 10)) }
@@ -294,10 +327,14 @@ func renderLog(es []logEntry, f logFilter) string {
 		}
 		b.WriteByte('\n')
 	}
-	if rows == 0 {
+	switch {
+	case rows > 0:
+	case term != "":
+		b.WriteString(sMuted.Render(Tf("No rows contain %q.", term)) + "\n")
+	default:
 		b.WriteString(sMuted.Render(Tf("No rows for the filter %q in this run.", f.label())) + "\n")
 	}
-	return b.String()
+	return b.String(), rows
 }
 
 // compactMove splits a move into the folders both paths share at the start
@@ -348,9 +385,11 @@ func renderMove(from, to string) string {
 	return b.String()
 }
 
-// viewLogFilters is the bar of the filters, with the number of rows of each one.
+// viewLogFilters is the bar above the log: the search box at the left, then the
+// filters with the number of rows of each one (counting only the rows that
+// contain the searched text). On a narrow screen the filters go on a second line.
 func (m *Model) viewLogFilters() string {
-	counts := logCounts(m.logEntries)
+	counts := logCounts(m.logEntries, m.logTerm())
 	var parts []string
 	for f := lfAll; f < logFilterCount; f++ {
 		text := f.label()
@@ -363,7 +402,121 @@ func (m *Model) viewLogFilters() string {
 		}
 		parts = append(parts, zone.Mark("logf:"+f.key(), item))
 	}
-	return " " + sMuted.Render(T("Show:")) + " " + strings.Join(parts, sSep.Render(" │ "))
+	search := m.viewLogSearch()
+	show := sMuted.Render(T("Show:")) + " " + strings.Join(parts, sSep.Render(" │ "))
+	if lipgloss.Width(search)+lipgloss.Width(show)+4 > m.w {
+		return " " + search + "\n " + show
+	}
+	return " " + search + sSep.Render("│ ") + show
+}
+
+const (
+	logSearchWidth = 20
+	logCountWidth  = 10 // "12345 rows"
+)
+
+func newLogSearch() textinput.Model {
+	ti := textinput.New()
+	ti.Prompt = ""
+	ti.CharLimit = 200
+	ti.Width = logSearchWidth - 1
+	return ti
+}
+
+// logTerm is the searched text, lower case.
+func (m *Model) logTerm() string { return strings.ToLower(strings.TrimSpace(m.logSearch.Value())) }
+
+func (m *Model) viewLogSearch() string {
+	box := sMuted.Render(pad(T("type to find"), logSearchWidth))
+	if m.logFinding || m.logSearch.Value() != "" {
+		box = lipgloss.NewStyle().Width(logSearchWidth).Render(m.logSearch.View())
+	}
+	br := sMuted
+	if m.logFinding {
+		br = sKey
+	}
+	// the space of the counter is always reserved, so the bar does not move while typing
+	count := ""
+	switch {
+	case m.logTerm() == "":
+	case m.logRows == 1:
+		count = T("1 row")
+	default:
+		count = Tf("%d rows", m.logRows)
+	}
+	out := sKey.Render("/") + " " + sMuted.Render(T("Search")) + " " + br.Render("[") + box + br.Render("]") +
+		" " + sMuted.Render(pad(count, logCountWidth))
+	return zone.Mark("logsearch", out)
+}
+
+func (m *Model) startLogSearch() tea.Cmd {
+	m.logFinding = true
+	return m.logSearch.Focus()
+}
+
+func (m *Model) stopLogSearch() {
+	m.logFinding = false
+	m.logSearch.Blur()
+}
+
+func (m *Model) clearLogSearch() {
+	m.logSearch.SetValue("")
+	m.refreshLog()
+}
+
+// logKey handles the keys of the log view.
+func (m *Model) logKey(k tea.KeyMsg) tea.Cmd {
+	key := k.String()
+	if m.logFinding {
+		switch key {
+		case "esc":
+			m.stopLogSearch()
+			m.clearLogSearch()
+			return nil
+		case "enter", "tab":
+			m.stopLogSearch()
+			return nil
+		case "up", "down", "pgup", "pgdown":
+			var cmd tea.Cmd
+			m.logView, cmd = m.logView.Update(k)
+			return cmd
+		}
+		before := m.logSearch.Value()
+		var cmd tea.Cmd
+		m.logSearch, cmd = m.logSearch.Update(k)
+		if m.logSearch.Value() != before {
+			m.refreshLog()
+		}
+		return cmd
+	}
+	switch key {
+	case "/":
+		return m.startLogSearch()
+	case "esc":
+		if m.logSearch.Value() != "" {
+			m.clearLogSearch() // first esc clears the search, the second closes
+			return nil
+		}
+		m.logOpen = false
+		return nil
+	case "q", "l":
+		m.logOpen = false
+		return nil
+	case "r":
+		return m.openLog(m.logRun, m.logTitle)
+	case "g", "home":
+		m.logView.GotoTop()
+		return nil
+	case "G", "end":
+		m.logView.GotoBottom()
+		return nil
+	}
+	if m.logFilterKey(key) {
+		return nil
+	}
+	var cmd tea.Cmd
+	m.logView, cmd = m.logView.Update(k)
+	return cmd
 }
 
 func (m *Model) setLogFilter(f logFilter) {
@@ -371,16 +524,22 @@ func (m *Model) setLogFilter(f logFilter) {
 	m.refreshLog()
 }
 
-// refreshLog renders the log with the current filter: the plain log opens at the
-// end (result and statistics), a filtered list at the top.
+// refreshLog renders the log with the current filter and search: the plain log
+// opens at the end (result and statistics), a filtered or searched list at the top.
 func (m *Model) refreshLog() {
+	term := m.logTerm()
+	var content string
 	if m.logFilter == lfAll {
-		m.logView.SetContent(colorizeLog(m.logText))
-		m.logView.GotoBottom()
-		return
+		content, m.logRows = searchLines(m.logText, term)
+	} else {
+		content, m.logRows = renderLog(m.logEntries, m.logFilter, term)
 	}
-	m.logView.SetContent(renderLog(m.logEntries, m.logFilter))
-	m.logView.GotoTop()
+	m.logView.SetContent(content)
+	if m.logFilter == lfAll && term == "" {
+		m.logView.GotoBottom()
+	} else {
+		m.logView.GotoTop()
+	}
 }
 
 // logFilterKey handles the filter keys of the log view.

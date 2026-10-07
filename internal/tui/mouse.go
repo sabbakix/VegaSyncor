@@ -105,6 +105,9 @@ func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
 	}
 
 	if m.logOpen {
+		if hit("logsearch", msg) {
+			return m.startLogSearch()
+		}
 		for f := lfAll; f < logFilterCount; f++ {
 			if hit("logf:"+f.key(), msg) {
 				m.setLogFilter(f)

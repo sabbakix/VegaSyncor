@@ -491,7 +491,10 @@ func (m *Model) viewHistory() (string, string) {
 // ---------- log ----------
 
 func (m *Model) viewLog() string {
-	help := renderHelp(T("↑↓ scroll · PgUp/PgDn page · g/G top/bottom · f filter · r reload · esc close"), m.w)
+	help := renderHelp(T("↑↓ scroll · PgUp/PgDn page · g/G top/bottom · / search · f filter · r reload · esc close"), m.w)
+	if m.logFinding {
+		help = renderHelp(T("type the text to find · ↑↓ scroll · enter done · esc clear"), m.w)
+	}
 	filters := m.viewLogFilters()
 	m.logView.Height = max(m.h-3-lipgloss.Height(filters)-lipgloss.Height(help), 3)
 	title := sTitle.Render(" Log: ") + sBold.Render(m.logTitle)

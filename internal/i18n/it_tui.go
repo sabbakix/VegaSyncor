@@ -22,7 +22,7 @@ func init() {
 		"n new · tab next tab · L language · q quit": "n nuova · tab scheda · L lingua · q esci",
 		"n new · enter edit · t test connection · d delete · E export · I import · tab next tab · L language · q quit": "n nuova · invio modifica · t prova connessione · d elimina · E esporta · I importa · tab scheda · L lingua · q esci",
 		"↑↓ scroll · enter open log · r refresh · tab next tab · L language · q quit":                                  "↑↓ scorri · invio apri log · r aggiorna · tab scheda · L lingua · q esci",
-		"↑↓ scroll · PgUp/PgDn page · g/G top/bottom · f filter · r reload · esc close":                                "↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · f filtro · r ricarica · esc chiudi",
+		"↑↓ scroll · PgUp/PgDn page · g/G top/bottom · / search · f filter · r reload · esc close":                     "↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · / cerca · f filtro · r ricarica · esc chiudi",
 		"↑↓ field · ←→ choose · space toggle · ctrl+s save · esc cancel":                                               "↑↓ campo · ←→ scegli · spazio attiva · ctrl+s salva · esc annulla",
 		"enter close":               "invio chiudi",
 		"y yes · n no":              "s sì · n no",
@@ -152,5 +152,12 @@ func init() {
 		"Moved":                                  "Spostati",
 		"moved":                                  "spostato",
 		"No rows for the filter %q in this run.": "Nessuna riga per il filtro %q in questa esecuzione.",
+		// run log search
+		"Search":              "Cerca",
+		"type to find":        "testo da cercare",
+		"%d rows":             "%d righe",
+		"1 row":               "1 riga",
+		"No rows contain %q.": "Nessuna riga contiene %q.",
+		"type the text to find · ↑↓ scroll · enter done · esc clear": "digita il testo da cercare · ↑↓ scorri · invio fatto · esc cancella",
 	})
 }

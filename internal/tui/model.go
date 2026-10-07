@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	zone "github.com/lrstanley/bubblezone"
@@ -77,6 +78,9 @@ type Model struct {
 	logText    string
 	logEntries []logEntry
 	logFilter  logFilter // kept while the TUI is open
+	logSearch  textinput.Model
+	logFinding bool // typing in the search box
+	logRows    int  // rows shown with the current filter and search
 
 	lastClick string // to detect double clicks
 
@@ -332,6 +336,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setFlash(T("Log:")+" "+msg.err.Error(), true)
 			return m, nil
 		}
+		if msg.run != m.logRun || !m.logOpen {
+			m.logSearch, m.logFinding = newLogSearch(), false // a new log starts without search
+		}
 		m.logOpen, m.logRun, m.logTitle = true, msg.run, msg.title
 		m.logView = viewport.New(m.w, max(m.h-5, 3))
 		m.logText, m.logEntries = msg.text, parseLog(msg.text)
@@ -451,25 +458,7 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 	case m.form != nil:
 		return m.formKey(k)
 	case m.logOpen:
-		switch key {
-		case "esc", "q", "l":
-			m.logOpen = false
-			return nil
-		case "r":
-			return m.openLog(m.logRun, m.logTitle)
-		case "g", "home":
-			m.logView.GotoTop()
-			return nil
-		case "G", "end":
-			m.logView.GotoBottom()
-			return nil
-		}
-		if m.logFilterKey(key) {
-			return nil
-		}
-		var cmd tea.Cmd
-		m.logView, cmd = m.logView.Update(k)
-		return cmd
+		return m.logKey(k)
 	}
 
 	switch key {

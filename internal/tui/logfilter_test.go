@@ -73,7 +73,7 @@ func TestParseLogMoves(t *testing.T) {
 	if strings.Join(upd, ",") != "Ledger.xlsx" {
 		t.Errorf("updated = %v", upd)
 	}
-	c := logCounts(es)
+	c := logCounts(es, "")
 	if c[lfMoved] != 6 || c[lfNew] != 2 || c[lfDeleted] != 3 || c[lfUpdated] != 1 || c[lfChanges] != 12 {
 		t.Errorf("counts = %v", c)
 	}
@@ -81,18 +81,18 @@ func TestParseLogMoves(t *testing.T) {
 
 func TestRenderLogFilters(t *testing.T) {
 	es := parseLog(sampleLog)
-	out := renderLog(es, lfChanges)
+	out, _ := renderLog(es, lfChanges, "")
 	if strings.Contains(out, "unchanged") || strings.Contains(out, "2026/\n") || strings.Contains(out, "Number of files") {
 		t.Errorf("changes view shows unchanged rows or statistics:\n%s", out)
 	}
 	if !strings.Contains(out, "Locked.xlsx") {
 		t.Error("errors must be shown with every filter")
 	}
-	moved := renderLog(es, lfMoved)
+	moved, _ := renderLog(es, lfMoved, "")
 	if !strings.Contains(stripANSI(moved), "{Old -> 2026/10}/Invoice-1.pdf") || strings.Contains(moved, "Temp.tmp") {
 		t.Errorf("moved view:\n%s", moved)
 	}
-	if !strings.Contains(renderLog(parseLog("[x] nothing"), lfMoved), "No rows") {
+	if !strings.Contains(first(renderLog(parseLog("[x] nothing"), lfMoved, "")), "No rows") {
 		t.Error("empty filter without message")
 	}
 }
@@ -114,5 +114,29 @@ func TestRenderMove(t *testing.T) {
 		if got := stripANSI(renderMove(in[0], in[1])); got != want {
 			t.Errorf("renderMove(%q, %q) = %q, want %q", in[0], in[1], got, want)
 		}
+	}
+}
+
+func first(s string, _ int) string { return s }
+
+func TestLogSearch(t *testing.T) {
+	es := parseLog(sampleLog)
+	// moved rows match on the old path too
+	out, n := renderLog(es, lfMoved, "projects")
+	if n != 3 || !strings.Contains(stripANSI(out), "{Projects -> Archive}/Site A/plan.dwg") {
+		t.Errorf("search in moved: %d rows\n%s", n, out)
+	}
+	if c := logCounts(es, "invoice"); c[lfMoved] != 2 || c[lfNew] != 0 || c[lfDeleted] != 0 {
+		t.Errorf("counts with search = %v", c)
+	}
+	if _, n := renderLog(es, lfChanges, "ledger"); n != 1 {
+		t.Errorf("changes + search: %d rows", n)
+	}
+	all, n := searchLines(sampleLog, "readme")
+	if n != 3 || strings.Contains(all, "Ledger") {
+		t.Errorf("plain log search: %d lines\n%s", n, all)
+	}
+	if out, n := searchLines(sampleLog, "zzz"); n != 0 || !strings.Contains(out, "No rows contain") {
+		t.Errorf("no match: %q", out)
 	}
 }

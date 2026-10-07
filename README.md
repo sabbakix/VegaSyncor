@@ -67,7 +67,8 @@ service to a new server.
 ![Export form with file name and password](docs/screenshots/08-export.png)
 
 **History**: outcome of every run, with access to the detailed log. The log can be filtered to show
-only the changes (`c`), or only new (`n`), updated (`u`), deleted (`d`) or moved (`m`) files.
+only the changes (`c`), or only new (`n`), updated (`u`), deleted (`d`) or moved (`m`) files, and
+searched as you type (`/`): only the rows containing the text are shown, together with the filter.
 
 ![Run history with outcomes and details](docs/screenshots/06-history.png)
 
@@ -170,7 +171,7 @@ are. To keep the terminal's own background instead: `VEGASYNCOR_THEME=terminal v
 | Syncs | `n` new · `Enter` edit · `r` run now · `s` dry run · `x` stop · `p` pause/resume · `l` log · `d` delete |
 | Connections | `n` new · `Enter` edit · `t` test · `d` delete · `E` export · `I` import |
 | History | `Enter` opens the run log · `r` refresh |
-| Run log | `a` all · `c` changes · `n` new · `u` updated · `d` deleted · `m` moved · `f` next filter · `g`/`G` top/bottom · `r` reload |
+| Run log | `/` search text (`Enter` done, `Esc` clear) · `a` all · `c` changes · `n` new · `u` updated · `d` deleted · `m` moved · `f` next filter · `g`/`G` top/bottom · `r` reload |
 | Firewall | `e` settings / lockdown · `a` add rule · `Enter` edit rule or add one from a port/connection · `d` delete rule · `r` refresh |
 | Form | `↑↓`/`Tab` field · `←→` choice · `Space` toggle · `Enter` browse · `Ctrl+S` save · `Esc` cancel |
 | Everywhere | `1` `2` `3` `4` / `Tab` switch tab · `L` language · `q` quit |
