@@ -35,3 +35,26 @@ func TestFormModified(t *testing.T) {
 		t.Error("restored value still reported as modified")
 	}
 }
+
+// The preview box highlighted while editing a job follows the section of the field.
+func TestJobFormSections(t *testing.T) {
+	fm := newJobForm(nil, nil, "")
+	want := map[string]int{
+		"name": secGeneral, "enabled": secGeneral,
+		"src_type": secSource, "src_share": secSource, "src_ro": secSource,
+		"dst_type": secDest, "dst_path": secDest,
+		"mode": secCopy, "arc_type": secCopy, "checksum": secCopy, "log_days": secCopy,
+		"sched": secSchedule, "times": secSchedule,
+	}
+	for i, f := range fm.Fields {
+		if sec, ok := want[f.Key]; ok {
+			if got := fm.sectionOf(i); got != sec {
+				t.Errorf("field %s: section %d, want %d", f.Key, got, sec)
+			}
+			delete(want, f.Key)
+		}
+	}
+	if len(want) > 0 {
+		t.Errorf("fields not found: %v", want)
+	}
+}

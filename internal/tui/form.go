@@ -154,6 +154,18 @@ func (f *field) snapshot() string {
 // modified reports whether the field differs from its value when the form was opened.
 func (f *field) modified() bool { return f.Kind != fSection && f.snapshot() != f.orig }
 
+// sectionOf returns the number of section headers before field i
+// (0 = before the first section).
+func (fm *form) sectionOf(i int) int {
+	n := 0
+	for k := 0; k <= i && k < len(fm.Fields); k++ {
+		if fm.Fields[k].Kind == fSection {
+			n++
+		}
+	}
+	return n
+}
+
 func (fm *form) move(dir int) {
 	n := len(fm.Fields)
 	i := fm.Cur

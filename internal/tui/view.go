@@ -598,6 +598,10 @@ func (m *Model) jobPreview() string {
 		}
 		return l.Display(cfg)
 	}
+	// the box of the part being edited is highlighted: the source for its
+	// section, the destination for its section and for the copy mode; neither
+	// for General and Schedule
+	part := fm.sectionOf(fm.Cur)
 	boxW := max((m.w-10)/2, 20)
 	inner := boxW - 4
 	src := sMuted.Render(T("SOURCE")) + "\n" + truncLeft(show(loc("src")), inner) + "\n"
@@ -610,13 +614,30 @@ func (m *Model) jobPreview() string {
 		sMuted.Render(trunc(config.ModeLabel(fm.choice("mode")), inner))
 	arrow := lipgloss.NewStyle().Foreground(cAccent).Bold(true).Padding(0, 1).Render("\n──>")
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
-		sFocusBox.Width(boxW).Render(src), arrow, sBox.Width(boxW).Render(dst))
+		boxStyle(part == secSource).Width(boxW).Render(src), arrow,
+		boxStyle(part == secDest || part == secCopy).Width(boxW).Render(dst))
 	modeDesc := config.ModeDescription(fm.choice("mode"))
 	if fm.choice("mode") == config.ModeMirrorArchive && fm.choice("arc_type") != "" {
 		modeDesc = Tf("Like Mirror, but deleted or overwritten files are moved to dated subfolders of %s.", show(loc("arc")))
 	}
 	desc := sMuted.Render("  " + trunc(modeDesc, m.w-4))
 	return lipgloss.NewStyle().PaddingLeft(1).Render(row) + "\n" + desc
+}
+
+// sections of the job form, as counted by sectionOf
+const (
+	secGeneral = iota + 1
+	secSource
+	secDest
+	secCopy
+	secSchedule
+)
+
+func boxStyle(active bool) lipgloss.Style {
+	if active {
+		return sFocusBox
+	}
+	return sBox
 }
 
 // ---------- finestre modali ----------
