@@ -54,7 +54,7 @@ The language (English / Italian) can be switched with the `EN|IT` selector next 
 - **Read-only source enforced by the kernel**: it is mounted with `mount.cifs -o ro`, so no file on the source can be changed or deleted.
 - **Encrypted passwords** (AES-256-GCM): they never appear in logs, processes or the TUI.
 - **Modes per job**:
-  - *Mirror + archive*: deleted or overwritten files are kept for N days in a dated folder;
+  - *Mirror + archive*: deleted or overwritten files are kept for N days in a dated folder (in the destination, or in a deleted items folder of your choice, also on another share);
   - *Mirror*: the destination becomes an exact copy;
   - *Add only*: never deletes anything.
 - **Destination** local or on an SMB share.
@@ -67,6 +67,7 @@ The language (English / Italian) can be switched with the `EN|IT` selector next 
 - **Safety block**: a mirror with an empty source is stopped so the backup is not wiped.
 - Incremental copy with `rsync`, bandwidth limit, exclusions, history and log of every run.
 - Optional **content comparison (checksum)** per job, to catch changes that keep the same size and date.
+- **Log folder** per job: a copy of every run log saved on the server or a share, older logs zipped by month.
 - **Run log filters and search**: show only changes, new, updated, deleted or **moved** files (a move is shown as one compact row, e.g. `{2026/02 -> Archive/2026-02}/Invoice.pdf`), and search the rows as you type.
 - **Firewall tab**: open ports and active connections, plus a lockdown (incoming only SSH from the admin hosts, outgoing only SMB to the backed-up hosts) with automatic rollback if a change is not confirmed.
 - **Export / import** of the whole configuration (connections with passwords, syncs, settings) as a password-protected encrypted file, to move the service to a new server: `vegasyncor export` on the old server, `vegasyncor import FILE` on the new one.
