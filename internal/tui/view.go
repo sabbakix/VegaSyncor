@@ -325,6 +325,15 @@ func (m *Model) viewJobs() (string, string) {
 	return b.String(), help
 }
 
+// display shows a location with the host of its connection.
+func (m *Model) display(l config.Location) string {
+	cfg := &config.Config{}
+	for _, c := range m.conns() {
+		cfg.Connections = append(cfg.Connections, c.Connection)
+	}
+	return l.Display(cfg)
+}
+
 func (m *Model) viewJobDetail(j api.JobStatus) string {
 	w := m.w - 4
 	lbl := func(s string) string { return sMuted.Render(pad(s, 19)) }
@@ -353,6 +362,16 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 		mode += sMuted.Render(" · " + T("compares contents (checksum)"))
 	}
 	lines = append(lines, lbl(T("Mode"))+mode)
+	if a := j.Job.Archive; a != nil && j.Job.Mode == config.ModeMirrorArchive {
+		lines = append(lines, lbl(T("Deleted to"))+trunc(m.display(*a), w-20))
+	}
+	if l := j.Job.LogDir; l != nil {
+		extra := ""
+		if j.Job.LogCompressDays > 0 {
+			extra = sMuted.Render("  " + Tf("(zip after %d days)", j.Job.LogCompressDays))
+		}
+		lines = append(lines, lbl(T("Log copy"))+trunc(m.display(*l), w-40)+extra)
+	}
 	sched := j.Job.Schedule.Describe()
 	if !j.Job.Enabled {
 		sched += sMuted.Render("  – " + T("paused, manual start only"))
@@ -420,9 +439,8 @@ func (m *Model) viewConns() (string, string) {
 	}
 	used := map[string]int{}
 	for _, j := range m.jobs() {
-		used[j.Job.Source.ConnectionID]++
-		if j.Job.Dest.ConnectionID != j.Job.Source.ConnectionID {
-			used[j.Job.Dest.ConnectionID]++
+		for _, id := range j.Job.ConnectionIDs() {
+			used[id]++
 		}
 	}
 	nameW, hostW, userW, verW, pwW := 26, 22, 26, 10, 12
@@ -593,7 +611,11 @@ func (m *Model) jobPreview() string {
 	arrow := lipgloss.NewStyle().Foreground(cAccent).Bold(true).Padding(0, 1).Render("\n──>")
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
 		sFocusBox.Width(boxW).Render(src), arrow, sBox.Width(boxW).Render(dst))
-	desc := sMuted.Render("  " + trunc(config.ModeDescription(fm.choice("mode")), m.w-4))
+	modeDesc := config.ModeDescription(fm.choice("mode"))
+	if fm.choice("mode") == config.ModeMirrorArchive && fm.choice("arc_type") != "" {
+		modeDesc = Tf("Like Mirror, but deleted or overwritten files are moved to dated subfolders of %s.", show(loc("arc")))
+	}
+	desc := sMuted.Render("  " + trunc(modeDesc, m.w-4))
 	return lipgloss.NewStyle().PaddingLeft(1).Render(row) + "\n" + desc
 }
 

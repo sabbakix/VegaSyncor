@@ -112,7 +112,7 @@ func TestPrune(t *testing.T) {
 	for _, d := range []string{"2026-08-01_220000", "2026-09-25_220000", "altro"} {
 		os.MkdirAll(filepath.Join(dst, config.ArchiveDirName, d), 0o755)
 	}
-	removed, err := PruneArchive(dst, 30, now)
+	removed, err := PruneArchive(filepath.Join(dst, config.ArchiveDirName), 30, now)
 	if err != nil || len(removed) != 1 || removed[0] != "2026-08-01_220000" {
 		t.Fatalf("%v %v", removed, err)
 	}
@@ -140,5 +140,36 @@ func TestChecksum(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(filepath.Join(dst, "f.txt")); string(b) != "new!" {
 		t.Error("checksum did not detect the changed contents")
+	}
+}
+
+// Custom archive folder outside the destination, and protected folders inside
+// it (a log or archive folder chosen in the destination) left alone by the mirror.
+func TestCustomArchiveAndProtect(t *testing.T) {
+	src, dst, arc := t.TempDir(), t.TempDir(), t.TempDir()
+	write(t, filepath.Join(src, "a.txt"), "new")
+	write(t, filepath.Join(dst, "a.txt"), "old version")
+	write(t, filepath.Join(dst, "gone.txt"), "deleted at the source")
+	write(t, filepath.Join(dst, "_logs [x]", "Docs_2026-10-01_220000.log"), "log")
+	past := time.Now().Add(-time.Hour)
+	os.Chtimes(filepath.Join(dst, "a.txt"), past, past)
+	stamp := "2026-10-07_220000"
+	var log bytes.Buffer
+	_, err := Run(context.Background(), Options{Src: src, Dst: dst, Mode: config.ModeMirrorArchive, RunStamp: stamp,
+		ArchiveDir: arc, Protect: []string{"_logs [x]"}}, &log, nil)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, log.String())
+	}
+	if b, _ := os.ReadFile(filepath.Join(arc, stamp, "gone.txt")); string(b) != "deleted at the source" {
+		t.Error("deleted file not moved to the custom archive")
+	}
+	if b, _ := os.ReadFile(filepath.Join(arc, stamp, "a.txt")); string(b) != "old version" {
+		t.Error("previous version not moved to the custom archive")
+	}
+	if _, err := os.Stat(filepath.Join(dst, config.ArchiveDirName)); err == nil {
+		t.Error("default archive folder created anyway")
+	}
+	if _, err := os.Stat(filepath.Join(dst, "_logs [x]", "Docs_2026-10-01_220000.log")); err != nil {
+		t.Error("protected folder deleted by the mirror")
 	}
 }

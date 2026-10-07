@@ -13,6 +13,7 @@ import (
 	"os/user"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -165,6 +166,10 @@ func (d *Daemon) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 	}
 	if other := d.cfg.DestConflict(j); other != nil {
 		fail(w, 400, errors.New(Tf("the destination overlaps with the job %q: a mirror would delete the other job's files", other.Name)))
+		return
+	}
+	if msg := d.cfg.FolderConflict(j); msg != "" {
+		fail(w, 400, errors.New(msg))
 		return
 	}
 	for _, o := range d.cfg.Jobs {
@@ -328,7 +333,7 @@ func (d *Daemon) handleDeleteConn(w http.ResponseWriter, r *http.Request) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, j := range d.cfg.Jobs {
-		if j.Source.ConnectionID == id || j.Dest.ConnectionID == id {
+		if slices.Contains(j.ConnectionIDs(), id) {
 			fail(w, 409, errors.New(Tf("connection used by the job %q", j.Name)))
 			return
 		}

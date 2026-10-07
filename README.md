@@ -21,7 +21,8 @@ the clock (or the `L` key).
 - **Three modes per job**
   - *Mirror + archive* (default): the destination is identical to the source, but deleted or
     overwritten files are moved to `.vegasyncor-archive/YYYY-MM-DD_hhmmss/` in the destination and
-    kept for N days.
+    kept for N days. The *deleted items folder* can be changed per job: another folder of the
+    server, another share (e.g. `\\NAS\Deleted\Accounting`) or a subfolder of the destination.
   - *Mirror*: exact copy, files deleted at the source are deleted.
   - *Add only*: never deletes anything in the destination.
 - **Destination**: local (server disk, USB disk, already mounted NAS) or an SMB share.
@@ -269,10 +270,23 @@ VegaSyncor detects this: it reports it during installation, prominently in the T
 | `/etc/vegasyncor/master.key` | password encryption key (**back it up**) |
 | `/var/lib/vegasyncor/history.json` | run history (last 100 per job) |
 | `/var/lib/vegasyncor/logs/` | detailed log of every run |
+| *log folder* of a job (optional) | copy of every run log, `<job>_<date>.log`, old ones in monthly zips |
 | `/run/vegasyncor/vegasyncor.sock` | socket used by the TUI |
 | `/run/vegasyncor/mnt/` | temporary mounts during copies |
 
 ## Technical notes
+
+- **Deleted items folder** (*Copy mode*, *Mirror + archive* only): where deleted and overwritten
+  files go, in a dated subfolder per run, cleaned after the *Keep archive* days. Default: the
+  hidden `.vegasyncor-archive` folder in the destination. It can be a folder of the server, a share
+  (the same share as the destination is best: files are moved instead of copied) or a subfolder of
+  the destination, which the sync then leaves alone. It cannot be in the source, nor be or contain
+  the destination, nor be shared with another job.
+- **Log folder** (*Copy mode*, optional): the log of every run (dry runs too, marked `_dry-run`) is
+  also saved as `<job>_<YYYY-MM-DD_hhmmss>.log` in a folder of the server or a share. With
+  *Zip logs after N days*, older logs are moved into one zip per month
+  (`<job>_logs_<YYYY-MM>.zip`, opens on Windows too); nothing is ever deleted. If the copy cannot be
+  saved, the run ends *with warnings*. Several jobs can share a log folder.
 
 - **How changed files are found**: a file is copied when its size or modification time differs
   from the copy in the destination (2 seconds of tolerance, because SMB and FAT round the times);

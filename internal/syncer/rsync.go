@@ -27,8 +27,14 @@ type Options struct {
 	Excludes      []string
 	DryRun        bool
 	BandwidthKBps int
-	Checksum      bool   // compare contents instead of size and modification time
-	RunStamp      string // used for the archive folder
+	Checksum      bool // compare contents instead of size and modification time
+	// ArchiveDir is where Mirror + archive keeps deleted and overwritten files
+	// (a RunStamp subfolder per run); "" = config.ArchiveDirName in Dst.
+	ArchiveDir string
+	// Protect lists folders inside Dst (relative paths) that the sync must
+	// neither copy over nor delete, e.g. a custom archive or log folder.
+	Protect  []string
+	RunStamp string // used for the archive folder
 }
 
 type Progress struct {
@@ -68,12 +74,17 @@ func BuildArgs(o Options) []string {
 	for _, e := range o.Excludes {
 		args = append(args, "--exclude="+e)
 	}
+	for _, p := range o.Protect {
+		if p = strings.Trim(p, "/"); p != "" {
+			args = append(args, "--exclude=/"+escapePattern(p)+"/")
+		}
+	}
 	switch o.Mode {
 	case config.ModeMirror:
 		args = append(args, "--delete", "--delete-delay")
 	case config.ModeMirrorArchive:
 		args = append(args, "--delete", "--delete-delay", "--backup",
-			"--backup-dir="+filepath.Join(o.Dst, config.ArchiveDirName, o.RunStamp))
+			"--backup-dir="+filepath.Join(o.archiveDir(), o.RunStamp))
 	}
 	if o.DryRun {
 		args = append(args, "--dry-run")
@@ -249,12 +260,24 @@ func IsEmptyDir(p string) (bool, error) {
 	return false, err
 }
 
-// PruneArchive removes the archive folders older than days days.
-func PruneArchive(dst string, days int, now time.Time) ([]string, error) {
+func (o Options) archiveDir() string {
+	if o.ArchiveDir != "" {
+		return o.ArchiveDir
+	}
+	return filepath.Join(o.Dst, config.ArchiveDirName)
+}
+
+// escapePattern makes a path literal in an rsync filter pattern.
+func escapePattern(p string) string {
+	return strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`).Replace(p)
+}
+
+// PruneArchive removes the dated folders older than days days from the archive
+// folder base (only folders named like a RunStamp are touched).
+func PruneArchive(base string, days int, now time.Time) ([]string, error) {
 	if days <= 0 {
 		return nil, nil
 	}
-	base := filepath.Join(dst, config.ArchiveDirName)
 	entries, err := os.ReadDir(base)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil

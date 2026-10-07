@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -93,6 +94,25 @@ type Job struct {
 	// size and modification time: detects every change but reads all the files
 	// on both sides at every run.
 	Checksum bool `json:"checksum,omitempty"`
+	// Archive is where Mirror + archive moves deleted and overwritten files
+	// (a dated subfolder per run); nil = ArchiveDirName inside the destination.
+	Archive *Location `json:"archive,omitempty"`
+	// LogDir receives a copy of the log of every run (nil = not saved).
+	LogDir *Location `json:"log_dir,omitempty"`
+	// LogCompressDays: logs in LogDir older than this are moved into monthly
+	// zip files (0 = never).
+	LogCompressDays int `json:"log_compress_days,omitempty"`
+}
+
+// ConnectionIDs lists the connections used by the job (each once).
+func (j Job) ConnectionIDs() []string {
+	var out []string
+	for _, l := range []*Location{&j.Source, &j.Dest, j.Archive, j.LogDir} {
+		if l != nil && l.Type == LocSMB && l.ConnectionID != "" && !slices.Contains(out, l.ConnectionID) {
+			out = append(out, l.ConnectionID)
+		}
+	}
+	return out
 }
 
 type Config struct {
@@ -289,6 +309,21 @@ func (j *Job) Validate(c *Config) error {
 	if j.BandwidthKBps < 0 {
 		return errors.New(T("invalid bandwidth limit"))
 	}
+	if j.Mode != ModeMirrorArchive {
+		j.Archive = nil
+	}
+	if err := j.validateFolder(c, j.Archive, T("deleted items folder")); err != nil {
+		return err
+	}
+	if err := j.validateFolder(c, j.LogDir, T("log folder")); err != nil {
+		return err
+	}
+	if j.LogDir == nil {
+		j.LogCompressDays = 0
+	}
+	if j.LogCompressDays < 0 {
+		return errors.New(T("invalid number of days for the log compression"))
+	}
 	var ex []string
 	for _, e := range j.Excludes {
 		if e = strings.TrimSpace(e); e != "" {
@@ -297,6 +332,98 @@ func (j *Job) Validate(c *Config) error {
 	}
 	j.Excludes = ex
 	return j.Schedule.Validate()
+}
+
+// validateFolder checks a folder written by the job besides the destination
+// (archive, logs): it must not touch the source (which is protected), and it
+// must not be the destination or contain it. Inside the destination it is
+// allowed: the sync skips it.
+func (j *Job) validateFolder(c *Config, l *Location, what string) error {
+	if l == nil {
+		return nil
+	}
+	if err := l.validate(c, what); err != nil {
+		return err
+	}
+	if c.locationsOverlap(*l, j.Source) {
+		return errors.New(what + ": " + T("it cannot be in the source or contain it"))
+	}
+	if c.Within(j.Dest, *l) {
+		return errors.New(what + ": " + T("it cannot be the destination or contain it (choose a subfolder or another folder)"))
+	}
+	return nil
+}
+
+// Within reports whether child is the folder parent or one of its subfolders
+// (same rules as locationsOverlap).
+func (c *Config) Within(child, parent Location) bool {
+	_, ok := c.RelPath(child, parent)
+	return ok
+}
+
+// RelPath returns the path of child relative to parent ("" when they are the
+// same folder) if child is parent or inside it.
+func (c *Config) RelPath(child, parent Location) (string, bool) {
+	if child.Type != parent.Type {
+		return "", false
+	}
+	pc, pp := child.Path, parent.Path
+	if child.Type == LocSMB {
+		cc, cp := c.Connection(child.ConnectionID), c.Connection(parent.ConnectionID)
+		if cc == nil || cp == nil || !strings.EqualFold(cc.Host, cp.Host) || !strings.EqualFold(child.Share, parent.Share) {
+			return "", false
+		}
+		pc, _ = CleanSubPath(pc)
+		pp, _ = CleanSubPath(pp)
+		if pp == "" {
+			return pc, true
+		}
+		if strings.EqualFold(pc, pp) {
+			return "", true
+		}
+		if len(pc) > len(pp) && strings.EqualFold(pc[:len(pp)+1], pp+"/") {
+			return pc[len(pp)+1:], true
+		}
+		return "", false
+	}
+	rel, err := filepath.Rel(filepath.Clean(pp), filepath.Clean(pc))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
+		return "", false
+	}
+	if rel == "." {
+		rel = ""
+	}
+	return rel, true
+}
+
+// FolderConflict checks the archive and log folders of j against the other
+// jobs: a folder inside the destination of another mirror job would be deleted
+// by it, and two jobs cannot share an archive folder (each one cleans it with
+// its own number of days). Returns "" if there is no conflict.
+func (c *Config) FolderConflict(j Job) string {
+	for i := range c.Jobs {
+		o := &c.Jobs[i]
+		if o.ID == j.ID {
+			continue
+		}
+		for _, f := range []struct {
+			l    *Location
+			what string
+		}{{j.Archive, T("deleted items folder")}, {j.LogDir, T("log folder")}} {
+			if f.l != nil && isMirror(o.Mode) && c.locationsOverlap(*f.l, o.Dest) {
+				return Tf("%s: it overlaps with the destination of the job %q, whose mirror would delete it", f.what, o.Name)
+			}
+		}
+		for _, l := range []*Location{o.Archive, o.LogDir} {
+			if l != nil && isMirror(j.Mode) && c.locationsOverlap(*l, j.Dest) {
+				return Tf("the destination overlaps with a folder used by the job %q (deleted items or logs): the mirror would delete it", o.Name)
+			}
+		}
+		if j.Archive != nil && o.Archive != nil && c.locationsOverlap(*j.Archive, *o.Archive) {
+			return Tf("deleted items folder: it is already used by the job %q", o.Name)
+		}
+	}
+	return ""
 }
 
 // DestConflict returns another job whose destination is the same folder as j's, or

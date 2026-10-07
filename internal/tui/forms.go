@@ -71,6 +71,26 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 	if j.BandwidthKBps > 0 {
 		bw = strconv.Itoa(j.BandwidthKBps)
 	}
+	// archive and log folders: "" = default / none
+	folder := func(l *config.Location) config.Location {
+		if l != nil {
+			return *l
+		}
+		c := j.Dest.ConnectionID
+		if c == "" && len(conns) > 0 {
+			c = conns[0].ID
+		}
+		return config.Location{ConnectionID: c}
+	}
+	arc, logd := folder(j.Archive), folder(j.LogDir)
+	logDays := ""
+	if j.LogCompressDays > 0 {
+		logDays = strconv.Itoa(j.LogCompressDays)
+	}
+	isArchive := func(f *form) bool { return f.choice("mode") == config.ModeMirrorArchive }
+	arcOn := func(f *form) bool { return isArchive(f) && f.choice("arc_type") != "" }
+	logOn := func(f *form) bool { return f.choice("log_type") != "" }
+	and := func(a, b func(*form) bool) func(*form) bool { return func(f *form) bool { return a(f) && b(f) } }
 	cron := j.Schedule.Cron
 	if cron == "" {
 		cron = "0 22 * * 1-5"
@@ -110,6 +130,19 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		newText("archive_days", T("Keep archive (days)"), arch, T("empty = forever")).
 			when(func(f *form) bool { return f.choice("mode") == config.ModeMirrorArchive }).
 			withHelp(T("archived versions older than N days are deleted")),
+		newChoice("arc_type", T("Deleted items folder"), append([]option{{"", T("Default: inside the destination")}}, locTypes...), arc.Type).
+			when(isArchive).helpFn(func(f *form) string {
+			if f.choice("arc_type") == "" {
+				return Tf("deleted and overwritten files go to %s/<date> in the destination", config.ArchiveDirName)
+			}
+			return T("deleted and overwritten files go to a dated subfolder of this folder; the same number of days applies")
+		}),
+		newChoice("arc_conn", T("Connection"), connOptions(conns), arc.ConnectionID).when(and(arcOn, isSMB("arc_type"))).
+			withHelp(T("PC, server or NAS where the deleted items are kept")),
+		newText("arc_share", T("Share"), arc.Share, T("e.g. Backup")).browsable().when(and(arcOn, isSMB("arc_type"))).
+			withHelp(T("shared folder for the deleted items (Enter to list them)")),
+		newText("arc_path", T("Folder"), arc.Path, T("e.g. Deleted/Accounting")).browsable().labeled(pathLabel("arc")).when(arcOn).
+			withHelp(T("Enter to browse the folders; it can also be a subfolder of the destination")),
 		newBool("allow_empty", T("Allow empty source"), j.AllowEmptySource).
 			when(func(f *form) bool { return f.choice("mode") != config.ModeAdditive }).
 			withHelp(T("normally a mirror with an empty source is blocked so the backup is not wiped")),
@@ -119,6 +152,16 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 			withHelp(T("comma-separated patterns (Thumbs.db, desktop.ini, ~$* are already excluded)")),
 		newText("bwlimit", T("Bandwidth limit (KB/s)"), bw, T("empty = unlimited")).
 			withHelp(T("maximum copy speed, so the network is not slowed down (e.g. 5000 ≈ 40 Mbit/s); empty = no limit")),
+		newChoice("log_type", T("Log folder"), append([]option{{"", T("None (logs only in History)")}}, locTypes...), logd.Type).
+			withHelp(T("also save the log of every run as a file in a folder of your choice (dry runs too)")),
+		newChoice("log_conn", T("Connection"), connOptions(conns), logd.ConnectionID).when(and(logOn, isSMB("log_type"))).
+			withHelp(T("PC, server or NAS where the logs are saved")),
+		newText("log_share", T("Share"), logd.Share, T("e.g. Backup")).browsable().when(and(logOn, isSMB("log_type"))).
+			withHelp(T("shared folder for the logs (Enter to list them)")),
+		newText("log_path", T("Folder"), logd.Path, T("e.g. Logs")).browsable().labeled(pathLabel("log")).when(logOn).
+			withHelp(T("Enter to browse the folders; one file per run: <job>_<date>.log")),
+		newText("log_days", T("Zip logs after (days)"), logDays, T("empty = never")).when(logOn).
+			withHelp(T("logs older than N days are moved into one zip per month (<job>_logs_<YYYY-MM>.zip); nothing is deleted")),
 
 		section(schedSection(zone)),
 		newChoice("sched", T("When"), scheds, j.Schedule.Type).helpFn(schedHelp),
@@ -207,7 +250,18 @@ func jobFromForm(fm *form, id string) (config.Job, error) {
 		return l
 	}
 	j.Source, j.Dest = loc("src"), loc("dst")
+	if j.Mode == config.ModeMirrorArchive && fm.choice("arc_type") != "" {
+		a := loc("arc")
+		j.Archive = &a
+	}
 	var err error
+	if fm.choice("log_type") != "" {
+		l := loc("log")
+		j.LogDir = &l
+		if j.LogCompressDays, err = atoiField(fm, "log_days", T("zip logs after")); err != nil {
+			return j, err
+		}
+	}
 	if j.Mode == config.ModeMirrorArchive {
 		if j.ArchiveDays, err = atoiField(fm, "archive_days", T("archive days")); err != nil {
 			return j, err

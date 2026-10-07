@@ -711,7 +711,7 @@ func (m *Model) startBrowse(key string) tea.Cmd {
 	} else if loc.Path == "" {
 		loc.Path = "/"
 	}
-	m.browser = &browser{target: key, loc: loc, allowNew: strings.HasPrefix(key, "dst_")}
+	m.browser = &browser{target: key, loc: loc, allowNew: prefix != "src"} // new folders only where the job writes
 	return m.browse()
 }
 
