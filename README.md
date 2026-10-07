@@ -165,6 +165,12 @@ To use the TUI without the mouse: `vegasyncor --no-mouse` (or `VEGASYNCOR_NO_MOU
 The TUI paints its own dark blue-grey background, so it looks the same whatever the terminal colours
 are. To keep the terminal's own background instead: `VEGASYNCOR_THEME=terminal vegasyncor`.
 
+Colours: over SSH the terminal usually reports only 256 colours (`TERM=xterm-256color`, no
+`COLORTERM`), although nearly all current terminals (Windows Terminal, PuTTY, MobaXterm, iTerm2,
+GNOME, Konsole) support true colour; in that case VegaSyncor uses true colour. If a terminal shows
+wrong colours, force a mode with `VEGASYNCOR_COLORS=256` (or `16`, `none`, `truecolor`); inside
+tmux/screen true colour is used only if `COLORTERM=truecolor` is set.
+
 ### Main keys
 
 | Tab | Keys |

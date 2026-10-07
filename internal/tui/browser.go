@@ -90,6 +90,7 @@ func (b *browser) startNaming() {
 	b.input = textinput.New()
 	b.input.Prompt = ""
 	b.input.Placeholder = T("e.g. Backup 2026")
+	b.input.PlaceholderStyle = sPlaceholderOn
 	b.input.CharLimit = 200
 	b.input.Width = 40
 	b.input.Focus()

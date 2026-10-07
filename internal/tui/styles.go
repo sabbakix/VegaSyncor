@@ -20,12 +20,16 @@ var (
 	cSelBg   = lipgloss.AdaptiveColor{Light: "#DBEAFE", Dark: "#1E3A5F"}
 	cText    = lipgloss.AdaptiveColor{Light: "#111827", Dark: "#E5E7EB"}
 	cBadgeBg = lipgloss.AdaptiveColor{Light: "#FEF3C7", Dark: "#4A3A10"}
-	cRowBg   = lipgloss.AdaptiveColor{Light: "#EEF2F8", Dark: "#1F2937"} // active form row
+	// active form row; a TerminalColor so the theme can give explicit 256-colour values
+	cRowBg lipgloss.TerminalColor = lipgloss.AdaptiveColor{Light: "#EEF2F8", Dark: "#1F2937"}
+	// placeholder text of the inputs (e.g. "e.g. Documents"), lighter on the active row
+	cPlaceholder   lipgloss.TerminalColor = lipgloss.AdaptiveColor{Light: "#9CA3AF", Dark: "#7C8494"}
+	cPlaceholderOn lipgloss.TerminalColor = lipgloss.AdaptiveColor{Light: "#6B7280", Dark: "#A3ABB8"}
 )
 
 // styles, built from the palette by rebuildStyles (again after the theme changes it)
 var (
-	sTitle, sMuted, sBold, sOK, sWarn, sErr, sRun, sSel, sSection, sKey, sROBadge, sTabOn, sTabOff, sBox, sFocusBox, sRule, sClock, sSep, sCheck, sMove lipgloss.Style
+	sTitle, sMuted, sBold, sOK, sWarn, sErr, sRun, sSel, sSection, sKey, sROBadge, sTabOn, sTabOff, sBox, sFocusBox, sRule, sClock, sSep, sCheck, sMove, sPlaceholder, sPlaceholderOn lipgloss.Style
 )
 
 func init() { rebuildStyles() }
@@ -51,6 +55,8 @@ func rebuildStyles() {
 	sSep = lipgloss.NewStyle().Foreground(cMuted)
 	sCheck = lipgloss.NewStyle().Bold(true).Foreground(cOK)
 	sMove = lipgloss.NewStyle().Foreground(cAccent)
+	sPlaceholder = lipgloss.NewStyle().Foreground(cPlaceholder)
+	sPlaceholderOn = lipgloss.NewStyle().Foreground(cPlaceholderOn)
 }
 
 func trunc(s string, w int) string {

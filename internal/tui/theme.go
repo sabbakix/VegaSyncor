@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/muesli/termenv"
 )
 
 // The default theme paints its own dark blue-grey background on the whole screen,
@@ -13,7 +14,9 @@ import (
 // VEGASYNCOR_THEME=terminal keeps the terminal's own background and colours.
 
 var (
-	themeBg   = lipgloss.Color("#1B2333") // dark blue-grey
+	// dark blue-grey; with 256 colours the automatic conversion gives navy (17),
+	// a dark grey is closer to the look of the theme
+	themeBg   = lipgloss.CompleteColor{TrueColor: "#1B2333", ANSI256: "235", ANSI: "0"}
 	themeText = lipgloss.Color("#DCE3EE")
 )
 
@@ -24,8 +27,33 @@ var themeOn bool
 // for the current terminal colour profile ("" if the terminal has no colours).
 var themeBase string
 
+// setupColors chooses the colour mode. SSH passes TERM (usually xterm-256color)
+// but not COLORTERM, so terminals that support true colour (nearly all current
+// ones) end up with the 256-colour approximation: in that case true colour is
+// assumed. VEGASYNCOR_COLORS=truecolor|256|16|none forces a mode.
+func setupColors() {
+	switch strings.ToLower(os.Getenv("VEGASYNCOR_COLORS")) {
+	case "truecolor", "24bit":
+		lipgloss.SetColorProfile(termenv.TrueColor)
+	case "256":
+		lipgloss.SetColorProfile(termenv.ANSI256)
+	case "16":
+		lipgloss.SetColorProfile(termenv.ANSI)
+	case "none", "0":
+		lipgloss.SetColorProfile(termenv.Ascii)
+	case "":
+		term := os.Getenv("TERM")
+		multiplexer := strings.HasPrefix(term, "screen") || strings.HasPrefix(term, "tmux") // may drop 24-bit colours
+		if lipgloss.ColorProfile() == termenv.ANSI256 && os.Getenv("COLORTERM") == "" &&
+			strings.Contains(term, "256color") && !multiplexer {
+			lipgloss.SetColorProfile(termenv.TrueColor)
+		}
+	}
+}
+
 // setupTheme chooses the theme at startup.
 func setupTheme() {
+	setupColors()
 	if strings.EqualFold(os.Getenv("VEGASYNCOR_THEME"), "terminal") {
 		return
 	}
@@ -45,7 +73,12 @@ func setupTheme() {
 	cSelBg = lipgloss.AdaptiveColor{Light: "#2D4A78", Dark: "#2D4A78"}
 	cText = lipgloss.AdaptiveColor{Light: "#DCE3EE", Dark: "#DCE3EE"}
 	cAccent = lipgloss.AdaptiveColor{Light: "#6CB6FF", Dark: "#6CB6FF"}
-	cRowBg = lipgloss.AdaptiveColor{Light: "#253049", Dark: "#253049"}
+	// Explicit 256-colour values: the automatic conversion turns these blue-greys
+	// into teal (#005f5f), which also hides the placeholders. Colour 60 (#5f5f87)
+	// is the blue-grey of the 256-colour palette.
+	cRowBg = lipgloss.CompleteColor{TrueColor: "#2B3650", ANSI256: "60", ANSI: "4"}
+	cPlaceholder = lipgloss.CompleteColor{TrueColor: "#8E9AB0", ANSI256: "245", ANSI: "8"}
+	cPlaceholderOn = lipgloss.CompleteColor{TrueColor: "#B4BECE", ANSI256: "250", ANSI: "7"}
 	rebuildStyles()
 }
 

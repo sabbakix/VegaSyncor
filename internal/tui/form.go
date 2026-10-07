@@ -56,6 +56,7 @@ func newText(key, label, value, placeholder string) *field {
 	ti := textinput.New()
 	ti.SetValue(value)
 	ti.Placeholder = placeholder
+	ti.PlaceholderStyle = sPlaceholder
 	ti.Prompt = ""
 	ti.CharLimit = 512
 	return &field{Key: key, Label: label, Kind: fText, Input: ti}
@@ -167,12 +168,15 @@ func (fm *form) move(dir int) {
 
 func (fm *form) setFocus(i int) {
 	if fm.Cur >= 0 && fm.Cur < len(fm.Fields) {
-		fm.Fields[fm.Cur].Input.Blur()
+		prev := fm.Fields[fm.Cur]
+		prev.Input.Blur()
+		prev.Input.PlaceholderStyle = sPlaceholder
 	}
 	fm.Cur = i
 	f := fm.Fields[i]
 	if f.Kind == fText || f.Kind == fPassword {
 		f.Input.Focus()
+		f.Input.PlaceholderStyle = sPlaceholderOn // readable on the highlighted row
 	}
 }
 
