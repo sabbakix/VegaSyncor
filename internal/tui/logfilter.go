@@ -289,13 +289,61 @@ func renderLog(es []logEntry, f logFilter) string {
 			b.WriteString(tag(sErr, "-", T("delete")) + e.path)
 			rows++
 		case ekMoved:
-			b.WriteString(tag(sMove, ">", T("moved")) + e.from + sMuted.Render(" -> ") + e.path)
+			b.WriteString(tag(sMove, ">", T("moved")) + renderMove(e.from, e.path))
 			rows++
 		}
 		b.WriteByte('\n')
 	}
 	if rows == 0 {
 		b.WriteString(sMuted.Render(Tf("No rows for the filter %q in this run.", f.label())) + "\n")
+	}
+	return b.String()
+}
+
+// compactMove splits a move into the folders both paths share at the start
+// (prefix) and at the end, file name included (suffix), and the parts that
+// differ; an empty part means "this folder" and is shown as ".".
+func compactMove(from, to string) (prefix, oldMid, newMid, suffix string) {
+	dir := strings.HasSuffix(to, "/")
+	a := strings.Split(strings.TrimSuffix(from, "/"), "/")
+	b := strings.Split(strings.TrimSuffix(to, "/"), "/")
+	s := 0
+	for s < len(a) && s < len(b) && a[len(a)-1-s] == b[len(b)-1-s] {
+		s++
+	}
+	p := 0
+	for p < len(a)-s && p < len(b)-s && a[p] == b[p] {
+		p++
+	}
+	prefix = strings.Join(a[:p], "/")
+	oldMid = strings.Join(a[p:len(a)-s], "/")
+	newMid = strings.Join(b[p:len(b)-s], "/")
+	suffix = strings.Join(a[len(a)-s:], "/")
+	if dir {
+		suffix += "/"
+	}
+	if oldMid == "" {
+		oldMid = "."
+	}
+	if newMid == "" {
+		newMid = "."
+	}
+	return
+}
+
+// renderMove writes a move like git does for renames: the shared parts once and
+// only what changed inside braces, e.g. Projects/{2025 -> Archive/2025}/plan.dwg.
+func renderMove(from, to string) string {
+	prefix, oldMid, newMid, suffix := compactMove(from, to)
+	var b strings.Builder
+	if prefix != "" {
+		b.WriteString(prefix + "/")
+	}
+	b.WriteString(sMuted.Render("{") + sErr.Render(oldMid) + sMuted.Render(" -> ") + sOK.Render(newMid) + sMuted.Render("}"))
+	if suffix != "" && suffix != "/" {
+		b.WriteString("/" + suffix)
+	} else {
+		b.WriteString(suffix)
 	}
 	return b.String()
 }

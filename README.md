@@ -282,7 +282,9 @@ VegaSyncor detects this: it reports it during installation, prominently in the T
   a second job scheduled rarely (e.g. weekly) as a verification pass.
 - **Moved files in the run log**: rsync does not detect moves; it deletes the file at the old place
   and copies it to the new one. The log viewer pairs them again: a deleted file and a new file with
-  the same name become one *moved* row (`old path -> new path`). With several files of the same name
+  the same name become one *moved* row. Like git does for renames, the parts of the path that did
+  not change are written once and only the changed part is shown in braces:
+  `Projects/{2025 -> Archive/2025}/plan.dwg` (`.` means "this folder", e.g. `{. -> Old}/a.txt`). With several files of the same name
   the one whose folders match best is chosen, and ties are left as new + deleted rather than
   guessed. A renamed folder is recognised when all the files moved out of it landed in the same
   new folder. In *Add only* mode nothing is deleted, so moved files appear only as new.

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -88,10 +89,30 @@ func TestRenderLogFilters(t *testing.T) {
 		t.Error("errors must be shown with every filter")
 	}
 	moved := renderLog(es, lfMoved)
-	if !strings.Contains(moved, "Old/Invoice-1.pdf") || !strings.Contains(moved, "-> 2026/10/Invoice-1.pdf") || strings.Contains(moved, "Temp.tmp") {
+	if !strings.Contains(stripANSI(moved), "{Old -> 2026/10}/Invoice-1.pdf") || strings.Contains(moved, "Temp.tmp") {
 		t.Errorf("moved view:\n%s", moved)
 	}
 	if !strings.Contains(renderLog(parseLog("[x] nothing"), lfMoved), "No rows") {
 		t.Error("empty filter without message")
+	}
+}
+
+func stripANSI(s string) string { return regexp.MustCompile(`\x1b\[[0-9;]*m`).ReplaceAllString(s, "") }
+
+func TestRenderMove(t *testing.T) {
+	cases := map[[2]string]string{
+		{"2026/02/Invoice.pdf", "Archive/2026-02/Invoice.pdf"}:  "{2026/02 -> Archive/2026-02}/Invoice.pdf",
+		{"Projects/Site A/plan.dwg", "Archive/Site A/plan.dwg"}: "{Projects -> Archive}/Site A/plan.dwg",
+		{"Docs/2025/a/b.txt", "Docs/Old/2025/a/b.txt"}:          "Docs/{. -> Old}/2025/a/b.txt",
+		{"Docs/Old/b.txt", "Docs/b.txt"}:                        "Docs/{Old -> .}/b.txt",
+		{"a.txt", "sub/a.txt"}:                                  "{. -> sub}/a.txt",
+		{"2026/02/", "Archive/2026-02/"}:                        "{2026/02 -> Archive/2026-02}/",
+		{"Clients/Rossi/2024/", "Clients/Rossi Srl/2024/"}:      "Clients/{Rossi -> Rossi Srl}/2024/",
+		{"Data/Report.PDF", "Data/report.pdf"}:                  "Data/{Report.PDF -> report.pdf}",
+	}
+	for in, want := range cases {
+		if got := stripANSI(renderMove(in[0], in[1])); got != want {
+			t.Errorf("renderMove(%q, %q) = %q, want %q", in[0], in[1], got, want)
+		}
 	}
 }
