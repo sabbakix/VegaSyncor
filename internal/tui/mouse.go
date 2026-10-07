@@ -104,8 +104,16 @@ func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
 		}
 	}
 
+	if m.logOpen {
+		for f := lfAll; f < logFilterCount; f++ {
+			if hit("logf:"+f.key(), msg) {
+				m.setLogFilter(f)
+			}
+		}
+		return nil
+	}
 	switch {
-	case m.info != nil || m.confirm != nil || m.logOpen:
+	case m.info != nil || m.confirm != nil:
 		return nil
 	}
 	if _, pending := m.fwPendingLeft(); pending && m.form == nil {

@@ -70,10 +70,13 @@ type Model struct {
 	confirm *confirmBox
 	info    *infoBox
 
-	logOpen  bool
-	logRun   string
-	logTitle string
-	logView  viewport.Model
+	logOpen    bool
+	logRun     string
+	logTitle   string
+	logView    viewport.Model
+	logText    string
+	logEntries []logEntry
+	logFilter  logFilter // kept while the TUI is open
 
 	lastClick string // to detect double clicks
 
@@ -330,9 +333,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.logOpen, m.logRun, m.logTitle = true, msg.run, msg.title
-		m.logView = viewport.New(m.w, max(m.h-4, 3))
-		m.logView.SetContent(colorizeLog(msg.text))
-		m.logView.GotoBottom()
+		m.logView = viewport.New(m.w, max(m.h-5, 3))
+		m.logText, m.logEntries = msg.text, parseLog(msg.text)
+		m.refreshLog()
 		return m, nil
 
 	case mkdirMsg:
@@ -459,6 +462,9 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 			return nil
 		case "G", "end":
 			m.logView.GotoBottom()
+			return nil
+		}
+		if m.logFilterKey(key) {
 			return nil
 		}
 		var cmd tea.Cmd

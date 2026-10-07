@@ -491,12 +491,13 @@ func (m *Model) viewHistory() (string, string) {
 // ---------- log ----------
 
 func (m *Model) viewLog() string {
-	help := renderHelp(T("↑↓ scroll · PgUp/PgDn page · g/G top/bottom · r reload · esc close"), m.w)
-	m.logView.Height = max(m.h-3-lipgloss.Height(help), 3)
+	help := renderHelp(T("↑↓ scroll · PgUp/PgDn page · g/G top/bottom · f filter · r reload · esc close"), m.w)
+	filters := m.viewLogFilters()
+	m.logView.Height = max(m.h-3-lipgloss.Height(filters)-lipgloss.Height(help), 3)
 	title := sTitle.Render(" Log: ") + sBold.Render(m.logTitle)
 	pct := fmt.Sprintf("%3.0f%%", m.logView.ScrollPercent()*100)
 	head := title + strings.Repeat(" ", max(m.w-lipgloss.Width(title)-len(pct)-1, 1)) + sMuted.Render(pct)
-	return head + "\n" + rule(m.w) + "\n" + m.logView.View() + "\n" + help
+	return head + "\n" + filters + "\n" + rule(m.w) + "\n" + m.logView.View() + "\n" + help
 }
 
 // ---------- form ----------

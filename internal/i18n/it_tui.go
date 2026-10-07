@@ -22,7 +22,7 @@ func init() {
 		"n new · tab next tab · L language · q quit": "n nuova · tab scheda · L lingua · q esci",
 		"n new · enter edit · t test connection · d delete · E export · I import · tab next tab · L language · q quit": "n nuova · invio modifica · t prova connessione · d elimina · E esporta · I importa · tab scheda · L lingua · q esci",
 		"↑↓ scroll · enter open log · r refresh · tab next tab · L language · q quit":                                  "↑↓ scorri · invio apri log · r aggiorna · tab scheda · L lingua · q esci",
-		"↑↓ scroll · PgUp/PgDn page · g/G top/bottom · r reload · esc close":                                           "↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · r ricarica · esc chiudi",
+		"↑↓ scroll · PgUp/PgDn page · g/G top/bottom · f filter · r reload · esc close":                                "↑↓ scorri · PgSu/PgGiù pagina · g/G inizio/fine · f filtro · r ricarica · esc chiudi",
 		"↑↓ field · ←→ choose · space toggle · ctrl+s save · esc cancel":                                               "↑↓ campo · ←→ scegli · spazio attiva · ctrl+s salva · esc annulla",
 		"enter close":               "invio chiudi",
 		"y yes · n no":              "s sì · n no",
@@ -142,5 +142,15 @@ func init() {
 		"Folder created.":                      "Cartella creata.",
 		"enter create the folder · esc cancel": "invio crea la cartella · esc annulla",
 		"enter open/select · ← up one level · s use current folder · n new folder · esc cancel": "invio apri/seleziona · ← su di un livello · s usa cartella corrente · n nuova cartella · esc annulla",
+		// run log filters
+		"Show:":                                  "Mostra:",
+		"All":                                    "Tutto",
+		"Changes":                                "Modifiche",
+		"New":                                    "Nuovi",
+		"Updated":                                "Aggiornati",
+		"Deleted":                                "Eliminati",
+		"Moved":                                  "Spostati",
+		"moved":                                  "spostato",
+		"No rows for the filter %q in this run.": "Nessuna riga per il filtro %q in questa esecuzione.",
 	})
 }

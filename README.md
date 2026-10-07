@@ -66,7 +66,8 @@ service to a new server.
 
 ![Export form with file name and password](docs/screenshots/08-export.png)
 
-**History**: outcome of every run, with access to the detailed log.
+**History**: outcome of every run, with access to the detailed log. The log can be filtered to show
+only the changes (`c`), or only new (`n`), updated (`u`), deleted (`d`) or moved (`m`) files.
 
 ![Run history with outcomes and details](docs/screenshots/06-history.png)
 
@@ -169,6 +170,7 @@ are. To keep the terminal's own background instead: `VEGASYNCOR_THEME=terminal v
 | Syncs | `n` new · `Enter` edit · `r` run now · `s` dry run · `x` stop · `p` pause/resume · `l` log · `d` delete |
 | Connections | `n` new · `Enter` edit · `t` test · `d` delete · `E` export · `I` import |
 | History | `Enter` opens the run log · `r` refresh |
+| Run log | `a` all · `c` changes · `n` new · `u` updated · `d` deleted · `m` moved · `f` next filter · `g`/`G` top/bottom · `r` reload |
 | Firewall | `e` settings / lockdown · `a` add rule · `Enter` edit rule or add one from a port/connection · `d` delete rule · `r` refresh |
 | Form | `↑↓`/`Tab` field · `←→` choice · `Space` toggle · `Enter` browse · `Ctrl+S` save · `Esc` cancel |
 | Everywhere | `1` `2` `3` `4` / `Tab` switch tab · `L` language · `q` quit |
@@ -278,6 +280,12 @@ VegaSyncor detects this: it reports it during installation, prominently in the T
   content, so even a change that keeps the same size and date is found. It is much slower and
   reads the whole share over the network at every run: use it for small, critical folders, or on
   a second job scheduled rarely (e.g. weekly) as a verification pass.
+- **Moved files in the run log**: rsync does not detect moves; it deletes the file at the old place
+  and copies it to the new one. The log viewer pairs them again: a deleted file and a new file with
+  the same name become one *moved* row (`old path -> new path`). With several files of the same name
+  the one whose folders match best is chosen, and ties are left as new + deleted rather than
+  guessed. A renamed folder is recognised when all the files moved out of it landed in the same
+  new folder. In *Add only* mode nothing is deleted, so moved files appear only as new.
 - File modification times are preserved; permissions and owners are not copied (they have no
   reliable equivalent between Windows/SMB and Linux).
 - If a file is locked (e.g. open in Excel) the job ends **with warnings** and the file is copied on

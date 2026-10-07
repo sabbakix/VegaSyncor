@@ -25,7 +25,7 @@ var (
 
 // styles, built from the palette by rebuildStyles (again after the theme changes it)
 var (
-	sTitle, sMuted, sBold, sOK, sWarn, sErr, sRun, sSel, sSection, sKey, sROBadge, sTabOn, sTabOff, sBox, sFocusBox, sRule, sClock, sSep, sCheck lipgloss.Style
+	sTitle, sMuted, sBold, sOK, sWarn, sErr, sRun, sSel, sSection, sKey, sROBadge, sTabOn, sTabOff, sBox, sFocusBox, sRule, sClock, sSep, sCheck, sMove lipgloss.Style
 )
 
 func init() { rebuildStyles() }
@@ -50,6 +50,7 @@ func rebuildStyles() {
 	sClock = lipgloss.NewStyle().Bold(true).Foreground(cText)
 	sSep = lipgloss.NewStyle().Foreground(cMuted)
 	sCheck = lipgloss.NewStyle().Bold(true).Foreground(cOK)
+	sMove = lipgloss.NewStyle().Foreground(cAccent)
 }
 
 func trunc(s string, w int) string {
