@@ -83,8 +83,9 @@ func init() {
 		"The browser then shows an error page (\"localhost\" cannot be reached): that is expected.": "Il browser mostra poi una pagina di errore (\"localhost\" non raggiungibile): è normale.",
 		"Copy the whole address from the address bar and paste it here:":                            "Copia l'indirizzo completo dalla barra degli indirizzi e incollalo qui:",
 		"signing in…": "accesso in corso…",
-		"Press enter to get a new link and try again.":                 "Premi invio per avere un nuovo link e riprovare.",
-		"enter new link · esc cancel":                                  "invio nuovo link · esc annulla",
-		"Signed in to OneDrive as %s: save the connection with ctrl+s": "Accesso a OneDrive come %s: salva la connessione con ctrl+s",
+		"(if the browser shows \"Success! All done\" instead, just press enter)": "(se invece il browser mostra \"Success! All done\", premi semplicemente invio)",
+		"Press enter to get a new link and try again.":                           "Premi invio per avere un nuovo link e riprovare.",
+		"enter new link · esc cancel":                                            "invio nuovo link · esc annulla",
+		"Signed in to OneDrive as %s: save the connection with ctrl+s":           "Accesso a OneDrive come %s: salva la connessione con ctrl+s",
 	})
 }

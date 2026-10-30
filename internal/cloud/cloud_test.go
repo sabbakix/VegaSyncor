@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -285,5 +286,32 @@ func TestAuthLinkAndWrongState(t *testing.T) {
 	_, err = a.Finish(context.Background(), "http://localhost:53682/?code=X&state=WRONG")
 	if err == nil || !strings.Contains(err.Error(), "another sign-in") {
 		t.Errorf("wrong state: %v", err)
+	}
+}
+
+// The browser can reach the rclone listener itself (same machine, WSL): then the
+// result of rclone is used with nothing pasted. Here the fake code is refused by
+// Microsoft, and that answer is what Finish must report.
+func TestAuthCompletedByBrowser(t *testing.T) {
+	needRclone(t)
+	a, link, err := StartAuth(t.TempDir())
+	if err != nil {
+		t.Skipf("rclone authorize not usable here: %v", err)
+	}
+	defer a.Cancel()
+	u, _ := url.Parse(link)
+	resp, err := http.Get("http://" + ListenAddr + "/?code=FAKE&state=" + u.Query().Get("state"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	select {
+	case <-a.done:
+	case <-time.After(30 * time.Second):
+		t.Skip("no answer from Microsoft (offline?)")
+	}
+	_, err = a.Finish(context.Background(), "")
+	if err == nil || !strings.Contains(err.Error(), "sign-in failed") {
+		t.Errorf("Finish = %v", err)
 	}
 }

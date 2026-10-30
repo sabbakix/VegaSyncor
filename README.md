@@ -239,7 +239,9 @@ on the local NAS. OneDrive is a destination only. The copy is made by
    mouse, or `ctrl+k` copies it to your PC's clipboard in terminals that support it), sign in and
    accept. The browser then lands on an address starting with `http://localhost:53682/?code=` and
    shows an error page: that is expected. Copy that whole address, paste it in the TUI and press
-   `Enter`, then save the connection with `ctrl+s`. `t` shows the free space.
+   `Enter`, then save the connection with `ctrl+s`. `t` shows the free space. If the browser runs
+   on the same machine (or on Windows with VegaSyncor in WSL) it reaches the server directly and
+   shows "Success! All done": then just press `Enter` without pasting anything.
 2. Tab **1 Syncs**, `n`: in *Destination* choose *OneDrive (off-site copy)*, the account and the
    folder (`Enter` browses OneDrive and can create folders).
 

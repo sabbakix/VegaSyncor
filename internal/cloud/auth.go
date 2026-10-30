@@ -32,7 +32,7 @@ const ListenAddr = "127.0.0.1:53682"
 type Auth struct {
 	cmd  *exec.Cmd
 	out  *lockedBuffer
-	done chan error
+	done chan struct{} // closed when rclone exits
 }
 
 type lockedBuffer struct {
@@ -65,14 +65,17 @@ func StartAuth(tmpDir string) (*Auth, string, error) {
 	if err := Available(); err != nil {
 		return nil, "", err
 	}
-	a := &Auth{out: &lockedBuffer{}, done: make(chan error, 1)}
+	a := &Auth{out: &lockedBuffer{}, done: make(chan struct{})}
 	a.cmd = exec.Command(Binary, "authorize", "onedrive", "--auth-no-open-browser")
 	a.cmd.Env = append(os.Environ(), "LC_ALL=C", "RCLONE_CONFIG="+tmpDir+"/rclone-auth.conf")
 	a.cmd.Stdout, a.cmd.Stderr = a.out, a.out
 	if err := a.cmd.Start(); err != nil {
 		return nil, "", err
 	}
-	go func() { a.done <- a.cmd.Wait() }()
+	go func() {
+		a.cmd.Wait()
+		close(a.done)
+	}()
 
 	deadline := time.Now().Add(15 * time.Second)
 	var local string
@@ -109,9 +112,27 @@ func (a *Auth) Cancel() {
 	}
 }
 
+func (a *Auth) exited() bool {
+	select {
+	case <-a.done:
+		return true
+	default:
+		return false
+	}
+}
+
 // Finish completes the sign-in with the address the browser landed on (or just
 // its "?code=…&state=…" part) and returns the token (JSON).
 func (a *Auth) Finish(ctx context.Context, pasted string) (string, error) {
+	// the browser may have reached the listener by itself (browser on the same
+	// machine, or WSL forwarding localhost from Windows): rclone already has the
+	// token, nothing needs to be pasted
+	if a.exited() {
+		return parseToken(a.out.String())
+	}
+	if strings.TrimSpace(pasted) == "" {
+		return "", errors.New(T("paste the address shown by the browser after the sign-in"))
+	}
 	q, err := callbackQuery(pasted)
 	if err != nil {
 		return "", err
@@ -122,7 +143,13 @@ func (a *Auth) Finish(ctx context.Context, pasted string) (string, error) {
 	}
 	resp, err := noRedirect.Do(req)
 	if err != nil {
-		return "", errors.New(T("the sign-in is no longer active: start it again"))
+		// the listener is gone: rclone may be finishing a sign-in received directly
+		select {
+		case <-a.done:
+			return parseToken(a.out.String())
+		case <-time.After(30 * time.Second):
+			return "", errors.New(T("the sign-in is no longer active: start it again"))
+		}
 	}
 	page, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
 	resp.Body.Close()

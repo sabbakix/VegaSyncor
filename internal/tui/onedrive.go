@@ -116,11 +116,7 @@ func (m *Model) signInKey(k tea.KeyMsg) tea.Cmd {
 		if s.failed {
 			return m.startSignIn() // a new link
 		}
-		pasted := strings.TrimSpace(s.input.Value())
-		if pasted == "" {
-			s.err = T("paste the address shown by the browser after the sign-in")
-			return nil
-		}
+		pasted := strings.TrimSpace(s.input.Value()) // may be empty: see the "Success" case
 		s.busy, s.err = true, ""
 		c, session := m.client, s.session
 		return func() tea.Msg {
@@ -164,7 +160,8 @@ func (m *Model) viewSignIn() (string, string) {
 	b.WriteString(" " + copyBtn + "\n\n")
 	b.WriteString(" " + sBold.Render("2.") + " " + T("Sign in with the Microsoft account (personal or work) and accept.") + "\n")
 	b.WriteString(" " + sBold.Render("3.") + " " + T("The browser then shows an error page (\"localhost\" cannot be reached): that is expected.") + "\n")
-	b.WriteString("    " + T("Copy the whole address from the address bar and paste it here:") + "\n\n")
+	b.WriteString("    " + T("Copy the whole address from the address bar and paste it here:") + "\n")
+	b.WriteString("    " + sMuted.Render(T("(if the browser shows \"Success! All done\" instead, just press enter)")) + "\n\n")
 	in := s.input
 	in.Width = max(m.w-6, 20)
 	b.WriteString("  " + sKey.Render(">") + " " + in.View() + "\n\n")
