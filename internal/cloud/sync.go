@@ -20,16 +20,17 @@ const (
 	stampFormat    = syncer.StampFormat
 )
 
-// Options of a copy to OneDrive.
+// Options of a copy between a local folder and OneDrive (either direction).
 type Options struct {
-	Src           string // local folder (already mounted)
+	Src           string // rclone path or local folder (already mounted)
+	Dst           string // rclone path or local folder
 	Mode          string
 	Excludes      []string
 	DryRun        bool
 	BandwidthKBps int
 	Checksum      bool
 	// Archive is the rclone path of the archive folder (Mirror + archive); a
-	// RunStamp subfolder is used for every run. "" = ArchiveDirName in Dest.
+	// RunStamp subfolder is used for every run. "" = ArchiveDirName in Dst.
 	Archive  string
 	Protect  []string // folders inside the destination (relative) left alone
 	RunStamp string
@@ -74,13 +75,14 @@ type jsonStats struct {
 	} `json:"transferring"`
 }
 
-// Args builds the rclone command line for a copy from opts.Src to dest.
-func Args(opts Options, dest string) []string {
+// Args builds the rclone command line for a copy from opts.Src to opts.Dst.
+func Args(opts Options) []string {
+	dest := opts.Dst
 	cmd := "sync"
 	if opts.Mode == config.ModeAdditive {
 		cmd = "copy"
 	}
-	args := []string{cmd, strings.TrimSuffix(opts.Src, "/") + "/", dest,
+	args := []string{cmd, opts.Src, dest,
 		"--use-json-log", "-v", "--stats", "1s", "--stats-log-level", "INFO",
 		"--modify-window", "2s", "--retries", "3"}
 	excl := append(append([]string{}, syncer.DefaultExcludes...), opts.Excludes...)
@@ -116,10 +118,10 @@ func escapeGlob(p string) string {
 	return strings.NewReplacer(`\`, `\\`, `*`, `\*`, `?`, `\?`, `[`, `\[`, `{`, `\{`).Replace(p)
 }
 
-// Sync copies opts.Src to the destination of c, writing the changes to log in
-// the rsync itemized form and reporting progress through onProgress.
+// Sync copies opts.Src to opts.Dst (one of them is c.Root or inside it), writing
+// the changes to log in the rsync itemized form and reporting progress.
 func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgress func(syncer.Progress)) (syncer.Result, error) {
-	args := Args(opts, c.Dest)
+	args := Args(opts)
 	fmt.Fprintf(log, "# rclone %s\n", strings.Join(args, " "))
 	cmd := c.command(ctx, args...)
 	stderr, err := cmd.StderrPipe()
@@ -139,6 +141,7 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 		last       jsonStats
 		lastNotify time.Time
 		lastErr    string
+		decryptErr bool // encrypted files that cannot be read: wrong password
 	)
 	add := func(kind, obj string, size int64) *event {
 		e := &event{kind: kind, obj: obj, size: size}
@@ -158,7 +161,7 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 		if json.Unmarshal([]byte(line), &l) != nil {
 			if strings.TrimSpace(line) != "" {
 				fmt.Fprintln(log, line)
-				lastErr = line
+				lastErr = stripStamp(line)
 			}
 			continue
 		}
@@ -203,6 +206,9 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 			strings.HasPrefix(l.Msg, "Set directory modification time"):
 			// folders and times only: not a change of the files
 		case l.Level == "error" || l.Level == "critical":
+			if c.encrypted && isDecryptError(l.Msg) {
+				decryptErr = true
+			}
 			msg := l.Msg
 			if obj != "" {
 				msg = obj + ": " + msg
@@ -211,6 +217,9 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 			lastErr = msg
 		case l.Level == "warning":
 			fmt.Fprintln(log, "warning: "+strings.TrimSpace(obj+" "+l.Msg))
+			if c.encrypted && isDecryptError(l.Msg) {
+				decryptErr = true
+			}
 		case l.Level == "notice":
 			fmt.Fprintln(log, "[rclone] "+strings.TrimSpace(obj+" "+l.Msg))
 		}
@@ -258,6 +267,9 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 			res.Warning = T("some files were not copied: see the log")
 			return res, nil
 		}
+		if decryptErr || (c.encrypted && isDecryptError(lastErr)) {
+			return res, errors.New(T("the files cannot be decrypted: check the password (it must be the same used to make the copy)"))
+		}
 		if lastErr == "" {
 			lastErr = Tf("rclone exit code %d", res.ExitCode)
 		}
@@ -266,9 +278,16 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 	return res, err
 }
 
+// isDecryptError recognises the errors rclone gives when encrypted files are
+// read with the wrong password.
+func isDecryptError(msg string) bool {
+	return strings.Contains(msg, "unexpected EOF") || strings.Contains(msg, "failed to authenticate decrypted block") ||
+		strings.Contains(msg, "bad password")
+}
+
 // listFiles returns the files already in the destination (for the dry run).
 func (c *Config) listFiles(ctx context.Context, opts Options) (map[string]bool, error) {
-	out, err := c.run(ctx, "lsf", "-R", "--files-only", "--exclude", "/"+archiveDirName+"/**", c.Dest)
+	out, err := c.run(ctx, "lsf", "-R", "--files-only", "--exclude", "/"+archiveDirName+"/**", opts.Dst)
 	if err != nil {
 		return nil, err
 	}

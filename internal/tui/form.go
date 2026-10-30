@@ -108,6 +108,9 @@ func newAction(key, label, text, button string) *field {
 
 func section(label string) *field { return &field{Kind: fSection, Label: label} }
 
+// id sets the key of a field (used for sections, which have no value).
+func (f *field) id(key string) *field { f.Key = key; return f }
+
 func (f *field) withHelp(h string) *field             { f.Help = h; return f }
 func (f *field) when(fn func(*form) bool) *field      { f.Visible = fn; return f }
 func (f *field) labeled(fn func(*form) string) *field { f.LabelFn = fn; return f }
@@ -172,16 +175,16 @@ func (f *field) snapshot() string {
 // modified reports whether the field differs from its value when the form was opened.
 func (f *field) modified() bool { return f.Kind != fSection && f.snapshot() != f.orig }
 
-// sectionOf returns the number of section headers before field i
-// (0 = before the first section).
-func (fm *form) sectionOf(i int) int {
-	n := 0
+// sectionOf returns the key of the section field i belongs to ("" before the
+// first section or for sections without a key).
+func (fm *form) sectionOf(i int) string {
+	key := ""
 	for k := 0; k <= i && k < len(fm.Fields); k++ {
 		if fm.Fields[k].Kind == fSection {
-			n++
+			key = fm.Fields[k].Key
 		}
 	}
-	return n
+	return key
 }
 
 func (fm *form) move(dir int) {

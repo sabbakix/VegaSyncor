@@ -350,9 +350,12 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 	if j.Job.SourceRO {
 		ro = "  " + sROBadge.Render(T("READ-ONLY"))
 	}
-	lines = append(lines, lbl(T("From"))+trunc(j.Source, w-36)+ro)
+	if j.Job.Encrypt && j.Job.Source.Type == config.LocOneDrive {
+		ro += "  " + sROBadge.Render(T("ENCRYPTED"))
+	}
+	lines = append(lines, lbl(T("From"))+trunc(j.Source, w-50)+ro)
 	enc := ""
-	if j.Job.Encrypt {
+	if j.Job.Encrypt && j.Job.Dest.Type == config.LocOneDrive {
 		enc = "  " + sROBadge.Render(T("ENCRYPTED"))
 	}
 	lines = append(lines, lbl(T("To"))+trunc(j.Dest, w-36)+enc)
@@ -602,7 +605,7 @@ func (m *Model) jobPreview() string {
 			l.ConnectionID, l.Share = fm.choice(p+"_conn"), fm.val(p+"_share")
 			l.Path = strings.Trim(strings.ReplaceAll(l.Path, `\`, "/"), "/")
 		case config.LocOneDrive:
-			l.ConnectionID = fm.choice("dst_odconn")
+			l.ConnectionID = fm.choice(p + "_odconn")
 			l.Path = strings.Trim(strings.ReplaceAll(l.Path, `\`, "/"), "/")
 		}
 		return l
@@ -630,13 +633,19 @@ func (m *Model) jobPreview() string {
 	}
 	dst := sMuted.Render(T("DESTINATION")) + "\n" + truncLeft(show(loc("dst")), inner) + "\n" +
 		sMuted.Render(trunc(config.ModeLabel(fm.choice("mode")), inner))
-	if fm.choice("dst_type") == config.LocOneDrive && fm.get("encrypt").Bool {
-		dst += "  " + sROBadge.Render(T("ENCRYPTED"))
+	srcOD := fm.choice("src_type") == config.LocOneDrive
+	dstOD := fm.choice("dst_type") == config.LocOneDrive
+	if fm.get("encrypt").Bool {
+		if srcOD {
+			src += "  " + sROBadge.Render(T("ENCRYPTED"))
+		} else if dstOD {
+			dst += "  " + sROBadge.Render(T("ENCRYPTED"))
+		}
 	}
 	arrow := lipgloss.NewStyle().Foreground(cAccent).Bold(true).Padding(0, 1).Render("\n──>")
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
-		boxStyle(part == secSource).Width(boxW).Render(src), arrow,
-		boxStyle(part == secDest || part == secCopy).Width(boxW).Render(dst))
+		boxStyle(part == secSource || (part == secCrypt && srcOD)).Width(boxW).Render(src), arrow,
+		boxStyle(part == secDest || part == secCopy || (part == secCrypt && !srcOD)).Width(boxW).Render(dst))
 	modeDesc := config.ModeDescription(fm.choice("mode"))
 	if fm.choice("mode") == config.ModeMirrorArchive && fm.choice("arc_type") != "" {
 		modeDesc = Tf("Like Mirror, but deleted or overwritten files are moved to dated subfolders of %s.", show(loc("arc")))
@@ -645,13 +654,14 @@ func (m *Model) jobPreview() string {
 	return lipgloss.NewStyle().PaddingLeft(1).Render(row) + "\n" + desc
 }
 
-// sections of the job form, as counted by sectionOf
+// sections of the job form (keys of the section fields, see sectionOf)
 const (
-	secGeneral = iota + 1
-	secSource
-	secDest
-	secCopy
-	secSchedule
+	secGeneral  = "sec_general"
+	secSource   = "sec_source"
+	secDest     = "sec_dest"
+	secCrypt    = "sec_crypt"
+	secCopy     = "sec_copy"
+	secSchedule = "sec_schedule"
 )
 
 func boxStyle(active bool) lipgloss.Style {

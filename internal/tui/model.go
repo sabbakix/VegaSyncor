@@ -729,6 +729,9 @@ func (m *Model) startBrowse(key string) tea.Cmd {
 	loc := config.Location{Type: typ, Path: fm.val(key)}
 	if typ == config.LocOneDrive {
 		loc.ConnectionID = fm.choice("dst_odconn")
+		if prefix == "src" {
+			loc.ConnectionID = fm.choice("src_odconn")
+		}
 		if loc.ConnectionID == "" {
 			fm.Err = T("add a OneDrive connection first (Connections tab)")
 			return nil

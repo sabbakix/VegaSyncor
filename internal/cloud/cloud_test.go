@@ -3,6 +3,7 @@ package cloud
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -79,7 +80,7 @@ func TestSyncModes(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer cfg.Close()
-			opts := Options{Src: src, Mode: mode, RunStamp: "2026-10-30_220000", DryRun: true}
+			opts := Options{Src: src, Dst: cfg.Root, Mode: mode, RunStamp: "2026-10-30_220000", DryRun: true}
 
 			var log bytes.Buffer
 			res, err := cfg.Sync(context.Background(), opts, &log, nil)
@@ -143,7 +144,7 @@ func TestSyncModes(t *testing.T) {
 				if _, err := os.Stat(arch); err != nil {
 					t.Error("archive removed by the mirror")
 				}
-				removed, err := cfg.PruneArchive(context.Background(), cfg.Dest+"/"+config.ArchiveDirName, 1,
+				removed, err := cfg.PruneArchive(context.Background(), cfg.Root+"/"+config.ArchiveDirName, 1,
 					time.Date(2026, 11, 5, 0, 0, 0, 0, time.Local))
 				if err != nil || len(removed) != 1 {
 					t.Errorf("prune: %v %v", removed, err)
@@ -163,7 +164,7 @@ func TestEncryptedSync(t *testing.T) {
 	}
 	defer cfg.Close()
 	var log bytes.Buffer
-	if _, err := cfg.Sync(context.Background(), Options{Src: src, Mode: config.ModeMirrorArchive, RunStamp: "2026-10-30_220000"}, &log, nil); err != nil {
+	if _, err := cfg.Sync(context.Background(), Options{Src: src, Dst: cfg.Root, Mode: config.ModeMirrorArchive, RunStamp: "2026-10-30_220000"}, &log, nil); err != nil {
 		t.Fatalf("%v\n%s", err, log.String())
 	}
 	if !has(lines(log.String()), ">f+++++++++ sub/b.txt") {
@@ -178,7 +179,7 @@ func TestEncryptedSync(t *testing.T) {
 		}
 		return nil
 	})
-	dirs, err := cfg.ListDirs(context.Background(), cfg.Dest)
+	dirs, err := cfg.ListDirs(context.Background(), cfg.Root)
 	if err != nil || len(dirs) != 1 || dirs[0] != "sub" {
 		t.Errorf("decrypted listing: %v %v", dirs, err)
 	}
@@ -214,8 +215,8 @@ func TestTokenInConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer cfg.Close()
-	if cfg.Token() != tok || cfg.Dest != "od:Backup" {
-		t.Errorf("token %q dest %q", cfg.Token(), cfg.Dest)
+	if cfg.Token() != tok || cfg.Root != "od:Backup" {
+		t.Errorf("token %q dest %q", cfg.Token(), cfg.Root)
 	}
 	st, _ := os.Stat(cfg.path)
 	if st.Mode().Perm() != 0o600 {
@@ -314,4 +315,80 @@ func TestAuthCompletedByBrowser(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "sign-in failed") {
 		t.Errorf("Finish = %v", err)
 	}
+}
+
+// OneDrive as source: the encrypted copy comes back decrypted into a local
+// folder; the mirror and the archive work on the local side.
+func TestDownloadEncrypted(t *testing.T) {
+	needRclone(t)
+	src, drive := setup(t)
+	os.RemoveAll(filepath.Join(drive, "Backup"))
+	cfg, err := NewConfig(t.TempDir(), Remote{DevRoot: drive}, "Backup", &Crypt{Password: "correct horse", Names: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cfg.Close()
+	var log bytes.Buffer
+	if _, err := cfg.Sync(context.Background(), Options{Src: src, Dst: cfg.Root, Mode: config.ModeMirror}, &log, nil); err != nil {
+		t.Fatalf("upload: %v\n%s", err, log.String())
+	}
+	if empty, err := cfg.IsEmpty(context.Background(), cfg.Root); err != nil || empty {
+		t.Errorf("IsEmpty after upload = %v, %v", empty, err)
+	}
+
+	restore := t.TempDir()
+	write(t, filepath.Join(restore, "local-only.txt"), "not on OneDrive")
+	log.Reset()
+	opts := Options{Src: cfg.Root, Dst: restore, Mode: config.ModeMirrorArchive, RunStamp: "2026-10-31_100000"}
+	res, err := cfg.Sync(context.Background(), opts, &log, nil)
+	if err != nil {
+		t.Fatalf("download: %v\n%s", err, log.String())
+	}
+	if b, _ := os.ReadFile(filepath.Join(restore, "sub", "b.txt")); string(b) != "b" {
+		t.Errorf("not decrypted: %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(restore, "a.txt")); string(b) != "new version" {
+		t.Errorf("a.txt = %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(restore, config.ArchiveDirName, "2026-10-31_100000", "local-only.txt")); string(b) != "not on OneDrive" {
+		t.Error("local-only file not archived on the local side")
+	}
+	ls := lines(log.String())
+	if !has(ls, ">f+++++++++ sub/b.txt") || !has(ls, "*deleting   local-only.txt") || res.Stats.FilesTransferred != 2 {
+		t.Errorf("download lines %v, stats %+v", ls, res.Stats)
+	}
+
+	// an empty OneDrive folder is detected (protection against wiping the local copy)
+	emptyCfg, _ := NewConfig(t.TempDir(), Remote{DevRoot: drive}, "Empty", nil)
+	defer emptyCfg.Close()
+	os.MkdirAll(filepath.Join(drive, "Empty", config.ArchiveDirName), 0o755)
+	if empty, err := emptyCfg.IsEmpty(context.Background(), emptyCfg.Root); err != nil || !empty {
+		t.Errorf("IsEmpty(empty folder) = %v, %v", empty, err)
+	}
+}
+
+// A copy encrypted with another password (names not encrypted, so they can be
+// listed) fails with a clear message and nothing is written.
+func TestDownloadWrongPassword(t *testing.T) {
+	needRclone(t)
+	src, drive := setup(t)
+	os.RemoveAll(filepath.Join(drive, "Backup"))
+	up, _ := NewConfig(t.TempDir(), Remote{DevRoot: drive}, "Backup", &Crypt{Password: "right one"})
+	defer up.Close()
+	if _, err := up.Sync(context.Background(), Options{Src: src, Dst: up.Root, Mode: config.ModeMirror}, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	down, _ := NewConfig(t.TempDir(), Remote{DevRoot: drive}, "Backup", &Crypt{Password: "wrong one"})
+	defer down.Close()
+	restore := t.TempDir()
+	_, err := down.Sync(context.Background(), Options{Src: down.Root, Dst: restore, Mode: config.ModeMirror}, io.Discard, nil)
+	if err == nil || !strings.Contains(err.Error(), "cannot be decrypted") {
+		t.Errorf("err = %v", err)
+	}
+	filepath.Walk(restore, func(p string, info os.FileInfo, err error) error {
+		if err == nil && !info.IsDir() {
+			t.Errorf("file written with the wrong password: %s", p)
+		}
+		return nil
+	})
 }

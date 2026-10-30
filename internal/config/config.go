@@ -345,9 +345,6 @@ func (j *Job) Validate(c *Config) error {
 	if err := j.Source.validate(c, T("source")); err != nil {
 		return err
 	}
-	if j.Source.Type == LocOneDrive {
-		return errors.New(T("OneDrive can only be used as destination"))
-	}
 	if err := j.Dest.validate(c, T("destination")); err != nil {
 		return err
 	}
@@ -405,28 +402,37 @@ func (j *Job) validateCloud(c *Config) error {
 	if j.LogDir != nil && j.LogDir.Type == LocOneDrive {
 		return errors.New(T("log folder: choose a folder of this server or a network folder"))
 	}
-	if j.Dest.Type != LocOneDrive {
-		if j.Archive != nil && j.Archive.Type == LocOneDrive {
+	srcOD, dstOD := j.Source.Type == LocOneDrive, j.Dest.Type == LocOneDrive
+	if srcOD && dstOD {
+		return errors.New(T("source and destination cannot both be OneDrive"))
+	}
+	if srcOD {
+		j.SourceRO = true // a copy never changes a OneDrive source
+	}
+	if a := j.Archive; a != nil {
+		switch {
+		case dstOD && (a.Type != LocOneDrive || a.ConnectionID != j.Dest.ConnectionID):
+			return errors.New(T("deleted items folder: with a OneDrive destination it must be on the same OneDrive"))
+		case !dstOD && a.Type == LocOneDrive:
 			return errors.New(T("deleted items folder: OneDrive can be used only with a OneDrive destination"))
 		}
+	}
+	if !srcOD && !dstOD {
 		j.Encrypt, j.EncryptNames, j.CryptPassEnc, j.CryptPassword = false, false, "", ""
 		return nil
 	}
-	if a := j.Archive; a != nil && (a.Type != LocOneDrive || a.ConnectionID != j.Dest.ConnectionID) {
-		return errors.New(T("deleted items folder: with a OneDrive destination it must be on the same OneDrive"))
-	}
-	if j.Encrypt {
-		if j.Archive != nil {
-			return errors.New(T("with encryption the deleted items are kept in the archive folder of the destination: leave the deleted items folder on default"))
-		}
-		if j.Checksum {
-			return errors.New(T("encrypted files cannot be compared by content: turn off 'Compare contents'"))
-		}
-		if j.CryptPassword == "" && j.CryptPassEnc == "" {
-			return errors.New(T("encryption: enter the password"))
-		}
-	} else {
+	if !j.Encrypt {
 		j.EncryptNames, j.CryptPassEnc, j.CryptPassword = false, "", ""
+		return nil
+	}
+	if dstOD && j.Archive != nil {
+		return errors.New(T("with encryption the deleted items are kept in the archive folder of the destination: leave the deleted items folder on default"))
+	}
+	if j.Checksum {
+		return errors.New(T("encrypted files cannot be compared by content: turn off 'Compare contents'"))
+	}
+	if j.CryptPassword == "" && j.CryptPassEnc == "" {
+		return errors.New(T("encryption: enter the password"))
 	}
 	return nil
 }

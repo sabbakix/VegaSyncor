@@ -50,13 +50,18 @@ type Crypt struct {
 type Config struct {
 	path string
 	base string // drive-absolute path prefix in the "od" remote ("" or the dev root)
-	// Dest is the rclone path of the destination (encrypted remote if Crypt).
-	Dest string
+	// Root is the rclone path of the OneDrive folder of the job (the encrypted
+	// remote over it if Crypt): the destination of an upload, or the source of a
+	// download.
+	Root string
+	// Raw is the OneDrive folder itself (== Root without encryption).
+	Raw       string
+	encrypted bool
 }
 
-// NewConfig writes the rclone configuration for the drive in dir. dest is the
-// destination folder on the drive; with crypt the files under it are encrypted.
-func NewConfig(dir string, r Remote, dest string, crypt *Crypt) (*Config, error) {
+// NewConfig writes the rclone configuration for the drive in dir. root is the
+// folder of the job on the drive; with crypt the files under it are encrypted.
+func NewConfig(dir string, r Remote, root string, crypt *Crypt) (*Config, error) {
 	if strings.ContainsAny(r.Token+r.DriveID+r.DriveType, "\r\n") {
 		return nil, errors.New("invalid OneDrive token")
 	}
@@ -68,7 +73,8 @@ func NewConfig(dir string, r Remote, dest string, crypt *Crypt) (*Config, error)
 	} else {
 		fmt.Fprintf(&b, "[od]\ntype = onedrive\ntoken = %s\ndrive_id = %s\ndrive_type = %s\n", r.Token, r.DriveID, r.DriveType)
 	}
-	c.Dest = c.Abs(dest)
+	c.Root = c.Abs(root)
+	c.Raw = c.Root
 	if crypt != nil {
 		pass, err := Obscure(crypt.Password)
 		if err != nil {
@@ -79,8 +85,8 @@ func NewConfig(dir string, r Remote, dest string, crypt *Crypt) (*Config, error)
 			names, dirs = "standard", "true"
 		}
 		fmt.Fprintf(&b, "\n[enc]\ntype = crypt\nremote = %s\npassword = %s\nfilename_encryption = %s\ndirectory_name_encryption = %s\n",
-			c.Dest, pass, names, dirs)
-		c.Dest = "enc:"
+			c.Root, pass, names, dirs)
+		c.Root, c.encrypted = "enc:", true
 	}
 	f, err := os.CreateTemp(dir, "rclone-*.conf")
 	if err != nil {
@@ -203,6 +209,16 @@ func (c *Config) ListDirs(ctx context.Context, remote string) ([]string, error) 
 	return dirs, nil
 }
 
+// IsEmpty reports whether a folder has no files or folders (the archive folder
+// does not count); a missing folder is an error.
+func (c *Config) IsEmpty(ctx context.Context, remote string) (bool, error) {
+	out, err := c.run(ctx, "lsf", "--max-depth", "1", "--exclude", "/"+archiveDirName+"/**", remote)
+	if err != nil {
+		return false, err
+	}
+	return strings.TrimSpace(string(out)) == "", nil
+}
+
 // Mkdir creates a folder.
 func (c *Config) Mkdir(ctx context.Context, remote string) error {
 	_, err := c.run(ctx, "mkdir", remote)
@@ -256,6 +272,15 @@ func (c *Config) PruneArchive(ctx context.Context, archive string, days int, now
 	return removed, nil
 }
 
+// stripStamp removes the date and time rclone puts before its plain-text messages
+// ("2026/10/30 11:24:30 Failed to ...").
+func stripStamp(l string) string {
+	if len(l) > 20 && l[4] == '/' && l[7] == '/' && l[10] == ' ' {
+		l = strings.TrimSpace(l[20:])
+	}
+	return strings.TrimPrefix(l, "ERROR : ")
+}
+
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
@@ -269,11 +294,7 @@ func lastLine(s string) string {
 		if json.Unmarshal([]byte(l), &j) == nil && j.Msg != "" {
 			return j.Msg
 		}
-		// "2026/10/30 11:24:30 Failed to ...": drop the timestamp
-		if len(l) > 20 && l[4] == '/' && l[10] == ' ' {
-			l = strings.TrimSpace(l[20:])
-		}
-		return strings.TrimPrefix(l, "ERROR : ")
+		return stripStamp(l)
 	}
 	return ""
 }

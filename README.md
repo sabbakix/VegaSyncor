@@ -230,7 +230,8 @@ the container must allow nftables (privileged containers usually do).
 
 Besides network shares and local folders, a sync can copy to **OneDrive** (personal Microsoft
 account or work account of Microsoft 365), e.g. as the off-site copy of a share already backed up
-on the local NAS. OneDrive is a destination only. The copy is made by
+on the local NAS. OneDrive can also be the **source** of a sync, to restore an off-site copy (or
+check it) into a local or network folder; it cannot be on both sides. The copy is made by
 [rclone](https://rclone.org) (installed with VegaSyncor, at least version 1.53; Debian 12 and Ubuntu
 24.04 ship 1.60).
 
@@ -254,6 +255,11 @@ on the local NAS. OneDrive is a destination only. The copy is made by
   also included in the configuration exports). To read the files without VegaSyncor use rclone
   with a *crypt* remote and the same password. With encryption *Compare contents* is not
   available and the deleted items stay in the archive folder of the destination.
+- **Restore** (OneDrive as source): choose the OneDrive folder as *Source* and a local or network
+  folder as *Destination*; for an encrypted copy turn on *Encrypted copy* with the **same password
+  and the same *Encrypt names too*** used for the upload. A wrong password stops the run without
+  writing anything ("the files cannot be decrypted"). The empty-source protection also applies: a
+  missing or empty OneDrive folder never wipes the local copy. The OneDrive side is never changed.
 - **Sign-in**: the token is stored encrypted like the passwords and refreshed automatically by
   every copy. Microsoft revokes it after about 90 days without use, or when the account password
   changes: then edit the connection and sign in again. The sign-in uses rclone's public app ID; no

@@ -196,22 +196,11 @@ func (d *Daemon) cryptOf(j config.Job) (*cloud.Crypt, error) {
 // phase to report when it fails.
 func (d *Daemon) syncOneDrive(ctx context.Context, cfg *config.Config, j config.Job, r *api.Run, src string, lf io.Writer, logf func(string)) (syncer.Result, string, error) {
 	d.setPhase(r, T("connecting to OneDrive"))
-	crypt, err := d.cryptOf(j)
-	if err != nil {
-		return syncer.Result{}, T("destination"), err
-	}
-	c, release, err := d.oneDrive(cfg, j.Dest.ConnectionID, j.Dest.Path, crypt)
+	c, release, err := d.oneDriveOf(cfg, j, j.Dest, logf)
 	if err != nil {
 		return syncer.Result{}, T("destination"), err
 	}
 	defer release()
-	if crypt != nil {
-		names := T("contents only")
-		if crypt.Names {
-			names = T("contents and names")
-		}
-		logf(Tf("Encryption:  on (%s)", names))
-	}
 
 	var protect []string
 	for _, l := range []*config.Location{j.Archive, j.LogDir} {
@@ -221,14 +210,14 @@ func (d *Daemon) syncOneDrive(ctx context.Context, cfg *config.Config, j config.
 			}
 		}
 	}
-	archive := cloud.Join(c.Dest, config.ArchiveDirName)
+	archive := cloud.Join(c.Root, config.ArchiveDirName)
 	if j.Mode == config.ModeMirrorArchive && j.Archive != nil {
 		archive = c.Abs(j.Archive.Path) // same drive (checked when the job is saved)
 	}
 
 	d.setPhase(r, T("synchronizing"))
 	opts := cloud.Options{
-		Src: src, Mode: j.Mode, Excludes: j.Excludes, DryRun: r.DryRun, BandwidthKBps: j.BandwidthKBps,
+		Src: src, Dst: c.Root, Mode: j.Mode, Excludes: j.Excludes, DryRun: r.DryRun, BandwidthKBps: j.BandwidthKBps,
 		Checksum: j.Checksum, Protect: protect, RunStamp: r.Start.Format(syncer.StampFormat),
 	}
 	if j.Mode == config.ModeMirrorArchive {
@@ -252,6 +241,27 @@ func (d *Daemon) syncOneDrive(ctx context.Context, cfg *config.Config, j config.
 		}
 	}
 	return res, "", nil
+}
+
+// oneDriveOf prepares the OneDrive side of a job (source or destination, loc),
+// with the encryption of the job, and writes the encryption mode to the log.
+func (d *Daemon) oneDriveOf(cfg *config.Config, j config.Job, loc config.Location, logf func(string)) (*cloud.Config, func(), error) {
+	crypt, err := d.cryptOf(j)
+	if err != nil {
+		return nil, nil, err
+	}
+	c, release, err := d.oneDrive(cfg, loc.ConnectionID, loc.Path, crypt)
+	if err != nil {
+		return nil, nil, err
+	}
+	if crypt != nil {
+		names := T("contents only")
+		if crypt.Names {
+			names = T("contents and names")
+		}
+		logf(Tf("Encryption:  on (%s)", names))
+	}
+	return c, release, nil
 }
 
 // --- connection test, browsing ---

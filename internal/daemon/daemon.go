@@ -112,14 +112,14 @@ func (d *Daemon) warnings() []string {
 	}
 	cloudJobs := 0
 	for _, j := range d.cfg.Jobs {
-		if j.Dest.Type == config.LocOneDrive {
+		if j.Dest.Type == config.LocOneDrive || j.Source.Type == config.LocOneDrive {
 			cloudJobs++
 		}
 	}
 	d.mu.Unlock()
 	if cloudJobs > 0 {
 		if err := cloud.Available(); err != nil {
-			out = append(out, Tf("%d jobs copy to OneDrive but %s", cloudJobs, err.Error()))
+			out = append(out, Tf("%d jobs use OneDrive but %s", cloudJobs, err.Error()))
 		}
 	}
 	return out

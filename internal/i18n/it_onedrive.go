@@ -16,7 +16,6 @@ func init() {
 		// config
 		"unknown connection type":                                                           "tipo di connessione sconosciuto",
 		"select a OneDrive connection":                                                      "seleziona una connessione OneDrive",
-		"OneDrive can only be used as destination":                                          "OneDrive può essere usato solo come destinazione",
 		"log folder: choose a folder of this server or a network folder":                    "cartella dei log: scegli una cartella di questo server o di rete",
 		"deleted items folder: OneDrive can be used only with a OneDrive destination":       "cartella degli eliminati: OneDrive si può usare solo con una destinazione OneDrive",
 		"deleted items folder: with a OneDrive destination it must be on the same OneDrive": "cartella degli eliminati: con una destinazione OneDrive deve essere sullo stesso OneDrive",
@@ -26,7 +25,7 @@ func init() {
 		"OneDrive: sign in to choose the account": "OneDrive: accedi per scegliere l'account",
 
 		// service
-		"%d jobs copy to OneDrive but %s":                                     "%d job copiano su OneDrive ma %s",
+		"%d jobs use OneDrive but %s":                                         "%d job usano OneDrive ma %s",
 		"OneDrive %s: not signed in (edit the connection and sign in)":        "OneDrive %s: accesso non effettuato (modifica la connessione e accedi)",
 		"encryption: the password cannot be read (enter it again in the job)": "cifratura: la password non è leggibile (inseriscila di nuovo nel job)",
 		"connecting to OneDrive":                                              "connessione a OneDrive",
@@ -42,10 +41,8 @@ func init() {
 		"OneDrive account": "Account OneDrive",
 		"OneDrive account to copy to (add it in the Connections tab)": "account OneDrive su cui copiare (aggiungilo nella scheda Connessioni)",
 		"e.g. Backup/Accounting (empty = root of OneDrive)":           "es. Backup/Contabilita (vuoto = radice di OneDrive)",
-		"Encrypt files": "Cifra i file",
 		"files are encrypted on this server before the upload: Microsoft cannot read them, but they can only be read back with VegaSyncor/rclone and the password": "i file vengono cifrati su questo server prima del caricamento: Microsoft non può leggerli, ma si possono rileggere solo con VegaSyncor/rclone e la password",
-		"Encrypt names too": "Cifra anche i nomi",
-		"also file and folder names are unreadable on OneDrive": "anche i nomi di file e cartelle non sono leggibili su OneDrive",
+		"Encrypt names too":   "Cifra anche i nomi",
 		"Encryption password": "Password di cifratura",
 		"WITHOUT THIS PASSWORD THE COPY CANNOT BE READ: keep it somewhere safe (it is also in the configuration exports); changing it later uploads everything again": "SENZA QUESTA PASSWORD LA COPIA NON È LEGGIBILE: conservala in un luogo sicuro (è anche nelle esportazioni della configurazione); cambiarla in seguito ricarica tutto da capo",
 		"OneDrive folder":       "Cartella OneDrive",
@@ -87,5 +84,19 @@ func init() {
 		"Press enter to get a new link and try again.":                           "Premi invio per avere un nuovo link e riprovare.",
 		"enter new link · esc cancel":                                            "invio nuovo link · esc annulla",
 		"Signed in to OneDrive as %s: save the connection with ctrl+s":           "Accesso a OneDrive come %s: salva la connessione con ctrl+s",
+		// OneDrive as source
+		"source and destination cannot both be OneDrive": "sorgente e destinazione non possono essere entrambe OneDrive",
+		"the folder %s cannot be read on OneDrive: %v":   "la cartella %s non è leggibile su OneDrive: %v",
+		"shared folder of a PC/server on the network, a folder of this server, or OneDrive (to restore or check an off-site copy)": "cartella condivisa di un PC/server in rete, cartella di questo server, oppure OneDrive (per ripristinare o verificare una copia fuori sede)",
+		"OneDrive account to copy from (add it in the Connections tab)":                                                            "account OneDrive da cui copiare (aggiungilo nella scheda Connessioni)",
+		"OneDrive encryption": "Cifratura OneDrive",
+		"Encrypted copy":      "Copia cifrata",
+		"on if the OneDrive folder holds an encrypted copy: the files are decrypted on this server with the same password used to upload them": "attivo se la cartella OneDrive contiene una copia cifrata: i file vengono decifrati su questo server con la stessa password usata per caricarli",
+		"also file and folder names are unreadable on OneDrive (to read a copy back, use the same setting as when it was uploaded)":            "anche i nomi di file e cartelle non sono leggibili su OneDrive (per rileggere una copia usa la stessa impostazione del caricamento)",
+		"the folder %s does not exist on OneDrive": "la cartella %s non esiste su OneDrive",
+		"the OneDrive folder is not empty but nothing can be decrypted: check the password and 'Encrypt names too' (they must be the same as when the copy was made)": "la cartella OneDrive non è vuota ma non si riesce a decifrare nulla: controlla la password e 'Cifra anche i nomi' (devono essere gli stessi usati per fare la copia)",
+		"the files cannot be decrypted: check the password (it must be the same used to make the copy)":                                                               "i file non si possono decifrare: controlla la password (deve essere la stessa usata per fare la copia)",
+		"e.g. /srv/backup/accounting": "es. /srv/backup/contabilita",
+		"e.g. /srv/data/accounting":   "es. /srv/dati/contabilita",
 	})
 }

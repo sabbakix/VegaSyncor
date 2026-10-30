@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"vegasyncor/internal/api"
+	"vegasyncor/internal/cloud"
 	"vegasyncor/internal/config"
 	"vegasyncor/internal/mount"
 	"vegasyncor/internal/paths"
@@ -168,25 +169,54 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 		logf(T("Comparison:  file contents (checksum): every file is read on both sides"))
 	}
 
-	d.setPhase(r, T("connecting to source"))
-	src, sm, err := d.prepare(ctx, cfg, j.ID+"-src", j.Source, j.SourceRO)
-	if err != nil {
-		return fail(T("source"), err)
-	}
-	defer func() {
-		if err := sm.Unmount(); err != nil {
-			logf(Tf("warning: unmounting source: %v", err))
-		}
-	}()
-	st, err := os.Stat(src)
-	if err != nil || !st.IsDir() {
-		return fail(T("source"), errors.New(Tf("the folder %s does not exist in the share", j.Source.Path)))
-	}
-	if j.Mode != config.ModeAdditive && !j.AllowEmptySource {
-		if empty, err := syncer.IsEmptyDir(src); err != nil {
+	var src string
+	var srcCloud *cloud.Config // OneDrive source: rclone downloads from it
+	if j.Source.Type == config.LocOneDrive {
+		d.setPhase(r, T("connecting to OneDrive"))
+		c, release, err := d.oneDriveOf(cfg, j, j.Source, logf)
+		if err != nil {
 			return fail(T("source"), err)
-		} else if empty {
+		}
+		defer release()
+		srcCloud, src = c, c.Root
+		empty, err := c.IsEmpty(ctx, c.Raw)
+		switch {
+		case err != nil && strings.Contains(err.Error(), "directory not found"):
+			return fail(T("source"), errors.New(Tf("the folder %s does not exist on OneDrive", "/"+j.Source.Path)))
+		case err != nil:
+			return fail(T("source"), errors.New(Tf("the folder %s cannot be read on OneDrive: %v", "/"+j.Source.Path, err)))
+		}
+		if !empty && j.Encrypt {
+			// files there, but nothing can be decrypted: wrong password or names setting
+			if dec, err := c.IsEmpty(ctx, c.Root); err == nil && dec {
+				return fail(T("source"), errors.New(T("the OneDrive folder is not empty but nothing can be decrypted: check the password and 'Encrypt names too' (they must be the same as when the copy was made)")))
+			}
+		}
+		if empty && j.Mode != config.ModeAdditive && !j.AllowEmptySource {
 			return fail(T("safety check"), errors.New(T("the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
+		}
+	} else {
+		d.setPhase(r, T("connecting to source"))
+		dir, sm, err := d.prepare(ctx, cfg, j.ID+"-src", j.Source, j.SourceRO)
+		if err != nil {
+			return fail(T("source"), err)
+		}
+		defer func() {
+			if err := sm.Unmount(); err != nil {
+				logf(Tf("warning: unmounting source: %v", err))
+			}
+		}()
+		src = dir
+		st, err := os.Stat(src)
+		if err != nil || !st.IsDir() {
+			return fail(T("source"), errors.New(Tf("the folder %s does not exist in the share", j.Source.Path)))
+		}
+		if j.Mode != config.ModeAdditive && !j.AllowEmptySource {
+			if empty, err := syncer.IsEmptyDir(src); err != nil {
+				return fail(T("source"), err)
+			} else if empty {
+				return fail(T("safety check"), errors.New(T("the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
+			}
 		}
 	}
 
@@ -265,11 +295,24 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 		BandwidthKBps: j.BandwidthKBps, Checksum: j.Checksum, RunStamp: r.Start.Format(syncer.StampFormat),
 		ArchiveDir: archiveDir, Protect: protect,
 	}
-	res, err := syncer.Run(ctx, opts, lf, func(p syncer.Progress) {
+	progress := func(p syncer.Progress) {
 		d.mu.Lock()
 		r.Progress = &p
 		d.mu.Unlock()
-	})
+	}
+	engine := "rsync"
+	var res syncer.Result
+	if srcCloud != nil {
+		engine = "OneDrive"
+		copts := cloud.Options{Src: src, Dst: dst, Mode: j.Mode, Excludes: j.Excludes, DryRun: r.DryRun,
+			BandwidthKBps: j.BandwidthKBps, Checksum: j.Checksum, Protect: protect, RunStamp: opts.RunStamp}
+		if j.Mode == config.ModeMirrorArchive {
+			copts.Archive = archiveDir
+		}
+		res, err = srcCloud.Sync(ctx, copts, lf, progress)
+	} else {
+		res, err = syncer.Run(ctx, opts, lf, progress)
+	}
 	d.mu.Lock()
 	r.Stats = res.Stats
 	d.mu.Unlock()
@@ -278,7 +321,7 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 		return api.StatusCancelled, T("cancelled")
 	}
 	if err != nil {
-		return fail("rsync", err)
+		return fail(engine, err)
 	}
 
 	if j.Mode == config.ModeMirrorArchive && !r.DryRun && j.ArchiveDays > 0 {

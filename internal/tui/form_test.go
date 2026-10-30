@@ -39,17 +39,18 @@ func TestFormModified(t *testing.T) {
 // The preview box highlighted while editing a job follows the section of the field.
 func TestJobFormSections(t *testing.T) {
 	fm := newJobForm(nil, nil, "")
-	want := map[string]int{
+	want := map[string]string{
 		"name": secGeneral, "enabled": secGeneral,
 		"src_type": secSource, "src_share": secSource, "src_ro": secSource,
-		"dst_type": secDest, "dst_path": secDest,
+		"dst_type": secDest, "dst_path": secDest, "src_odconn": secSource, "dst_odconn": secDest,
+		"encrypt": secCrypt, "crypt_pass": secCrypt,
 		"mode": secCopy, "arc_type": secCopy, "checksum": secCopy, "log_days": secCopy,
 		"sched": secSchedule, "times": secSchedule,
 	}
 	for i, f := range fm.Fields {
 		if sec, ok := want[f.Key]; ok {
 			if got := fm.sectionOf(i); got != sec {
-				t.Errorf("field %s: section %d, want %d", f.Key, got, sec)
+				t.Errorf("field %s: section %q, want %q", f.Key, got, sec)
 			}
 			delete(want, f.Key)
 		}

@@ -87,7 +87,9 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 	}
 	isSMB := func(k string) func(*form) bool { return func(f *form) bool { return f.choice(k) == config.LocSMB } }
 	isOD := func(f *form) bool { return f.choice("dst_type") == config.LocOneDrive }
-	encOn := func(f *form) bool { return isOD(f) && f.get("encrypt").Bool }
+	srcOD := func(f *form) bool { return f.choice("src_type") == config.LocOneDrive }
+	anyOD := func(f *form) bool { return isOD(f) || srcOD(f) }
+	encOn := func(f *form) bool { return anyOD(f) && f.get("encrypt").Bool }
 	passHint := T("at least 8 characters")
 	if j.CryptPassEnc != "" {
 		passHint = T("unchanged (type a new one to change it)")
@@ -144,22 +146,33 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		title = T("Edit:") + " " + j.Name
 	}
 	fm := &form{Title: title, Fields: []*field{
-		section(T("General")),
+		section(T("General")).id(secGeneral),
 		newText("name", T("Name"), j.Name, T("e.g. Accounting Office-PC")).withHelp(T("name shown for this sync in the lists and logs")),
 		newBool("enabled", T("Active"), j.Enabled).withHelp(T("when off, the job does not run on schedule (it can still be started manually)")),
 
-		section(T("1. Source – where to copy from")),
-		newChoice("src_type", T("Type"), locTypes, j.Source.Type).withHelp(T("shared folder of a PC/server on the network, or a folder of this server")),
+		section(T("1. Source – where to copy from")).id(secSource),
+		newChoice("src_type", T("Type"), dstTypes, j.Source.Type).
+			withHelp(T("shared folder of a PC/server on the network, a folder of this server, or OneDrive (to restore or check an off-site copy)")),
 		newChoice("src_conn", T("Connection"), connOptions(conns), j.Source.ConnectionID).when(isSMB("src_type")).
 			withHelp(T("PC or server to read from, with the credentials saved in the Connections tab")),
+		newChoice("src_odconn", T("OneDrive account"), oneDriveOptions(conns), j.Source.ConnectionID).when(srcOD).
+			withHelp(T("OneDrive account to copy from (add it in the Connections tab)")),
 		newText("src_share", T("Share"), j.Source.Share, T("e.g. Documents")).browsable().when(isSMB("src_type")).
 			withHelp(T("name of the shared folder on the PC/server (Enter to list them)")),
 		newText("src_path", T("Subfolder"), j.Source.Path, T("empty = the whole share")).browsable().labeled(pathLabel("src")).
-			withHelp(T("Enter to browse the folders")),
-		newBool("src_ro", T("Read-only"), j.SourceRO).
+			withHelp(T("Enter to browse the folders")).placeholder(func(f *form) string {
+			switch f.choice("src_type") {
+			case config.LocOneDrive:
+				return T("e.g. Backup/Accounting (empty = root of OneDrive)")
+			case config.LocLocal:
+				return T("e.g. /srv/data/accounting")
+			}
+			return T("empty = the whole share")
+		}),
+		newBool("src_ro", T("Read-only"), j.SourceRO).when(func(f *form) bool { return !srcOD(f) }).
 			withHelp(T("recommended: the source is mounted read-only, it cannot be changed or deleted")),
 
-		section(T("2. Destination – where to save the copy")),
+		section(T("2. Destination – where to save the copy")).id(secDest),
 		newChoice("dst_type", T("Type"), dstTypes, j.Dest.Type).withHelp(T("where to save the copy: a folder of this server (also a mounted USB disk or NAS), a network folder, or OneDrive for an off-site copy")),
 		newChoice("dst_conn", T("Connection"), connOptions(conns), j.Dest.ConnectionID).when(isSMB("dst_type")).
 			withHelp(T("PC, server or NAS to write the copy to")),
@@ -169,20 +182,29 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 			withHelp(T("destination shared folder (Enter to list them)")),
 		newText("dst_path", T("Folder"), j.Dest.Path, T("empty = root of the share")).browsable().labeled(pathLabel("dst")).
 			withHelp(T("Enter to browse the folders")).placeholder(func(f *form) string {
-			if isOD(f) {
+			switch f.choice("dst_type") {
+			case config.LocOneDrive:
 				return T("e.g. Backup/Accounting (empty = root of OneDrive)")
+			case config.LocLocal:
+				return T("e.g. /srv/backup/accounting")
 			}
 			return T("empty = root of the share")
 		}),
-		newBool("encrypt", T("Encrypt files"), j.Encrypt).when(isOD).
-			withHelp(T("files are encrypted on this server before the upload: Microsoft cannot read them, but they can only be read back with VegaSyncor/rclone and the password")),
+
+		section(T("OneDrive encryption")).id(secCrypt).when(anyOD),
+		newBool("encrypt", T("Encrypted copy"), j.Encrypt).when(anyOD).helpFn(func(f *form) string {
+			if srcOD(f) {
+				return T("on if the OneDrive folder holds an encrypted copy: the files are decrypted on this server with the same password used to upload them")
+			}
+			return T("files are encrypted on this server before the upload: Microsoft cannot read them, but they can only be read back with VegaSyncor/rclone and the password")
+		}),
 		newBool("encrypt_names", T("Encrypt names too"), j.EncryptNames).when(encOn).
-			withHelp(T("also file and folder names are unreadable on OneDrive")),
+			withHelp(T("also file and folder names are unreadable on OneDrive (to read a copy back, use the same setting as when it was uploaded)")),
 		newPassword("crypt_pass", T("Encryption password"), passHint).when(encOn).
 			withHelp(T("WITHOUT THIS PASSWORD THE COPY CANNOT BE READ: keep it somewhere safe (it is also in the configuration exports); changing it later uploads everything again")),
 		newPassword("crypt_pass2", T("Repeat password"), "").when(encOn).withHelp(T("type the same password again")),
 
-		section(T("3. Copy mode")),
+		section(T("3. Copy mode")).id(secCopy),
 		newChoice("mode", T("Mode"), modes, j.Mode).helpFn(func(f *form) string { return config.ModeDescription(f.choice("mode")) }),
 		newText("archive_days", T("Keep archive (days)"), arch, T("empty = forever")).
 			when(func(f *form) bool { return f.choice("mode") == config.ModeMirrorArchive }).
@@ -220,7 +242,7 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		newText("log_days", T("Zip logs after (days)"), logDays, T("empty = never")).when(logOn).
 			withHelp(T("logs older than N days are moved into one zip per month (<job>_logs_<YYYY-MM>.zip); nothing is deleted")),
 
-		section(schedSection(zone)),
+		section(schedSection(zone)).id(secSchedule),
 		newChoice("sched", T("When"), scheds, j.Schedule.Type).helpFn(schedHelp),
 		newText("every", T("Every (minutes)"), every, T("e.g. 30, 60, 240")).when(sched(config.SchedInterval)).
 			withHelp(T("60 = every hour, 240 = every 4 hours")),
@@ -308,12 +330,16 @@ func jobFromForm(fm *form, id string) (config.Job, error) {
 			l.ConnectionID = fm.choice(p + "_conn")
 			l.Share = fm.val(p + "_share")
 		case config.LocOneDrive:
-			l.ConnectionID = fm.choice("dst_odconn") // the archive is on the same OneDrive
+			if p == "src" {
+				l.ConnectionID = fm.choice("src_odconn")
+			} else {
+				l.ConnectionID = fm.choice("dst_odconn") // the archive is on the same OneDrive as the destination
+			}
 		}
 		return l
 	}
 	j.Source, j.Dest = loc("src"), loc("dst")
-	if j.Dest.Type == config.LocOneDrive && fm.get("encrypt").Bool {
+	if (j.Dest.Type == config.LocOneDrive || j.Source.Type == config.LocOneDrive) && fm.get("encrypt").Bool {
 		j.Encrypt, j.EncryptNames = true, fm.get("encrypt_names").Bool
 		pass := fm.get("crypt_pass").Input.Value()
 		if pass != "" {
