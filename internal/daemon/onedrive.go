@@ -42,7 +42,10 @@ func devOneDrive() bool { return paths.DevMode() && paths.DevOneDriveRoot() != "
 
 func (d *Daemon) handleOneDriveSignIn(w http.ResponseWriter, r *http.Request) {
 	if devOneDrive() {
-		reply(w, api.OneDriveStart{Session: "dev", URL: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?dev=simulated"})
+		// same form as the real address (rclone's public app ID); nothing is contacted
+		reply(w, api.OneDriveStart{Session: "dev", URL: "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?access_type=offline" +
+			"&client_id=b15665d9-eda6-4092-8539-0eec376afd59&redirect_uri=http%3A%2F%2Flocalhost%3A53682%2F&response_type=code" +
+			"&scope=Files.Read+Files.ReadWrite+Files.Read.All+Files.ReadWrite.All+Sites.Read.All+offline_access&state=" + config.NewID() + config.NewID()})
 		return
 	}
 	signMu.Lock()
@@ -85,7 +88,7 @@ func (d *Daemon) handleOneDriveFinish(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		reply(w, api.OneDriveAccount{Token: `{"access_token":"dev","token_type":"Bearer","refresh_token":"dev","expiry":"2099-01-01T00:00:00Z"}`,
-			DriveID: "dev-drive", DriveType: "personal", Account: "Dev User"})
+			DriveID: "dev-drive", DriveType: "business", Account: "Office Backup"})
 		return
 	}
 	signMu.Lock()

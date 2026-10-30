@@ -60,7 +60,7 @@ destination folder can be created on the spot (`n`).
 
 ![Log of a dry run with new, updated and deleted files](docs/screenshots/05-dry-run.png)
 
-**Connections**: saved, encrypted credentials, reusable by several jobs.
+**Connections**: saved, encrypted credentials (and OneDrive accounts), reusable by several jobs.
 
 ![List of saved SMB connections](docs/screenshots/04-connections.png)
 
@@ -68,6 +68,13 @@ destination folder can be created on the spot (`n`).
 service to a new server.
 
 ![Export form with file name and password](docs/screenshots/08-export.png)
+
+**Off-site copy to OneDrive**: sign in from the TUI (open the link on your PC, paste back the address),
+then choose OneDrive as destination, with optional encryption before the upload.
+
+![OneDrive sign-in screen with the Microsoft link and the pasted address](docs/screenshots/09-onedrive-signin.png)
+
+![Job copying a network share to OneDrive with encryption](docs/screenshots/10-onedrive-job.png)
 
 **History**: outcome of every run, with access to the detailed log. The log can be filtered to show
 only the changes (`c`), or only new (`n`), updated (`u`), deleted (`d`) or moved (`m`) files, and
@@ -425,6 +432,11 @@ Translations live in `internal/i18n`, one table per language keyed by the Englis
 a text has no translation, if a translation is no longer used, or if the format verbs (`%s`, `%d`, …)
 differ. To add a language: add it to `Languages` and `catalogs` in `internal/i18n/i18n.go` and create
 its table.
+
+### Screenshots
+
+The README screenshots are made from the real TUI with demo data: see
+[docs/screenshots/tools](docs/screenshots/tools/README.md).
 
 ### Code layout
 
