@@ -68,8 +68,11 @@ type Model struct {
 
 	browser *browser
 	picker  *picker
-	confirm *confirmBox
-	info    *infoBox
+	signin  *odSignIn
+	// odAccount: result of the last OneDrive sign-in in the connection form
+	odAccount *api.OneDriveAccount
+	confirm   *confirmBox
+	info      *infoBox
 
 	logOpen    bool
 	logRun     string
@@ -319,6 +322,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case exportMsg, importMsg:
 		return m, m.transferDone(msg)
 
+	case odStartMsg:
+		return m, m.signInStarted(msg)
+
+	case odFinishMsg:
+		m.signInFinished(msg)
+		return m, nil
+
 	case savedMsg:
 		m.saving = false
 		if msg.err != nil {
@@ -449,6 +459,8 @@ func (m *Model) handleKey(k tea.KeyMsg) tea.Cmd {
 			m.confirm = nil
 		}
 		return nil
+	case m.signin != nil:
+		return m.signInKey(k)
 	case m.picker != nil:
 		return m.pickerKey(key)
 	case m.browser != nil && m.browser.naming:
@@ -575,10 +587,12 @@ func (m *Model) connsKey(key string) tea.Cmd {
 		m.connCur = clamp(m.connCur+1, n)
 	case "n", "a":
 		m.form, m.formKind, m.formID = newConnForm(nil), "conn", ""
+		m.odAccount = nil
 	case "enter", "e":
 		if c != nil {
 			cc := *c
 			m.form, m.formKind, m.formID = newConnForm(&cc), "conn", c.ID
+			m.odAccount = nil
 		}
 	case "E":
 		m.form, m.formKind, m.formID = newExportForm(), "export", ""
@@ -640,7 +654,7 @@ func (m *Model) formKey(k tea.KeyMsg) tea.Cmd {
 		return m.saveForm()
 	case "enter":
 		if f := fm.current(); f.Browse {
-			return m.startBrowse(f.Key)
+			return m.fieldAction(f)
 		}
 	}
 	fm.Err = ""
@@ -671,8 +685,13 @@ func (m *Model) saveForm() tea.Cmd {
 		m.saving = true
 		return func() tea.Msg { _, err := c.SaveJob(j); return savedMsg{err} }
 	case "conn":
-		in := connFromForm(fm, m.formID)
-		if m.formID == "" && in.Password == "" {
+		in := connFromForm(fm, m.formID, m.odAccount)
+		if in.IsOneDrive() {
+			if in.DriveID == "" {
+				fm.Err = T("sign in to OneDrive first (Enter on the account)")
+				return nil
+			}
+		} else if m.formID == "" && in.Password == "" {
 			fm.Err = T("enter the password")
 			return nil
 		}
@@ -680,6 +699,14 @@ func (m *Model) saveForm() tea.Cmd {
 		return func() tea.Msg { _, err := c.SaveConnection(in); return savedMsg{err} }
 	}
 	return nil
+}
+
+// fieldAction runs the button of a field: browse a folder, or sign in.
+func (m *Model) fieldAction(f *field) tea.Cmd {
+	if f.Key == "od_account" {
+		return m.startSignIn()
+	}
+	return m.startBrowse(f.Key)
 }
 
 func (m *Model) startBrowse(key string) tea.Cmd {
@@ -700,7 +727,14 @@ func (m *Model) startBrowse(key string) tea.Cmd {
 		}
 	}
 	loc := config.Location{Type: typ, Path: fm.val(key)}
-	if typ == config.LocSMB {
+	if typ == config.LocOneDrive {
+		loc.ConnectionID = fm.choice("dst_odconn")
+		if loc.ConnectionID == "" {
+			fm.Err = T("add a OneDrive connection first (Connections tab)")
+			return nil
+		}
+		loc.Path, _ = config.CleanSubPath(loc.Path)
+	} else if typ == config.LocSMB {
 		loc.ConnectionID = fm.choice(prefix + "_conn")
 		loc.Share = fm.val(prefix + "_share")
 		if loc.ConnectionID == "" || loc.Share == "" {

@@ -112,15 +112,18 @@ func (b *browser) child(i int) (string, bool) {
 
 func (b *browser) parent() string {
 	p := path.Dir(b.loc.Path)
-	if b.loc.Type == config.LocSMB && (p == "." || p == "/") {
+	if b.loc.Type != config.LocLocal && (p == "." || p == "/") {
 		return ""
 	}
 	return p
 }
 
 func (b *browser) displayPath() string {
-	if b.loc.Type == config.LocLocal {
+	switch b.loc.Type {
+	case config.LocLocal:
 		return b.loc.Path
+	case config.LocOneDrive:
+		return "/" + b.loc.Path
 	}
 	p := strings.ReplaceAll(b.loc.Path, "/", `\`)
 	return `\` + b.loc.Share + `\` + p

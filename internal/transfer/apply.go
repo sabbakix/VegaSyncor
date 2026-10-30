@@ -25,6 +25,22 @@ func BuildPayload(cfg *config.Config, box *secrets.Box) (Payload, error) {
 		}
 		c.PasswordEnc = ""
 	}
+	p.Config.Jobs = append([]config.Job(nil), cfg.Jobs...)
+	for i := range p.Config.Jobs {
+		j := &p.Config.Jobs[i]
+		if j.CryptPassEnc == "" {
+			continue
+		}
+		pw, err := box.Decrypt(j.CryptPassEnc, config.CryptAAD(j.ID))
+		if err != nil {
+			return p, fmt.Errorf("%s %s: %w", T("job"), j.Name, err)
+		}
+		if p.CryptPasswords == nil {
+			p.CryptPasswords = map[string]string{}
+		}
+		p.CryptPasswords[j.ID] = pw
+		j.CryptPassEnc = ""
+	}
 	return p, nil
 }
 
@@ -70,9 +86,18 @@ func BuildConfig(p *Payload, current *config.Config, box *secrets.Box) (*config.
 	next.Jobs = nil
 	names := map[string]bool{}
 	for _, j := range p.Config.Jobs {
+		j.CryptPassEnc, j.CryptPassword = "", p.CryptPasswords[j.ID]
 		if err := j.Validate(&next); err != nil {
 			return nil, res, fmt.Errorf("%s %q: %w", T("job"), j.Name, err)
 		}
+		if j.Encrypt {
+			enc, err := box.Encrypt(j.CryptPassword, config.CryptAAD(j.ID))
+			if err != nil {
+				return nil, res, err
+			}
+			j.CryptPassEnc = enc
+		}
+		j.CryptPassword = ""
 		if names[j.Name] {
 			return nil, res, errors.New(Tf("duplicate job name %q in the export file", j.Name))
 		}

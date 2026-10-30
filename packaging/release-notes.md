@@ -11,7 +11,7 @@ curl -fsSL https://github.com/sabbakix/VegaSyncor/releases/latest/download/vegas
 The script:
 - detects the architecture (amd64 / arm64);
 - downloads the `.deb` package and verifies its checksum;
-- installs the dependencies (`rsync`, `cifs-utils`, `smbclient`, `nftables`);
+- installs the dependencies (`rsync`, `cifs-utils`, `smbclient`, `nftables`, `rclone`);
 - starts the `vegasyncor` service (run it again to update).
 
 ### Manual install of the package
@@ -19,7 +19,7 @@ The script:
 ```bash
 # amd64 (x86_64 PCs/servers). For Raspberry Pi 4/5 and ARM servers use _arm64.deb
 wget https://github.com/sabbakix/VegaSyncor/releases/download/v{{VERSION}}/vegasyncor_{{VERSION}}_amd64.deb
-sudo apt install ./vegasyncor_{{VERSION}}_amd64.deb smbclient nftables
+sudo apt install ./vegasyncor_{{VERSION}}_amd64.deb smbclient nftables rclone
 ```
 
 ### Without the package (other distributions with systemd)
@@ -67,6 +67,7 @@ The language (English / Italian) can be switched with the `EN|IT` selector next 
 - **Safety block**: a mirror with an empty source is stopped so the backup is not wiped.
 - Incremental copy with `rsync`, bandwidth limit, exclusions, history and log of every run.
 - Optional **content comparison (checksum)** per job, to catch changes that keep the same size and date.
+- **Off-site copy to OneDrive** (Personal or Microsoft 365) with optional client-side encryption: sign in from the TUI, no Azure setup.
 - **Log folder** per job: a copy of every run log saved on the server or a share, older logs zipped by month.
 - **Run log filters and search**: show only changes, new, updated, deleted or **moved** files (a move is shown as one compact row, e.g. `{2026/02 -> Archive/2026-02}/Invoice.pdf`), and search the rows as you type.
 - **Firewall tab**: open ports and active connections, plus a lockdown (incoming only SSH from the admin hosts, outgoing only SMB to the backed-up hosts) with automatic rollback if a change is not confirmed.

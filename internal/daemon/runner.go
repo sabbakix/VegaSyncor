@@ -190,6 +190,21 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 		}
 	}
 
+	if j.Dest.Type == config.LocOneDrive {
+		res, phase, err := d.syncOneDrive(ctx, cfg, j, r, src, lf, logf)
+		d.mu.Lock()
+		r.Stats = res.Stats
+		d.mu.Unlock()
+		if errors.Is(err, context.Canceled) {
+			logf(T("cancelled by the user"))
+			return api.StatusCancelled, T("cancelled")
+		}
+		if err != nil {
+			return fail(phase, err)
+		}
+		return d.summarize(j, r, res, logf)
+	}
+
 	d.setPhase(r, T("connecting to destination"))
 	dst, dm, err := d.prepare(ctx, cfg, j.ID+"-dst", j.Dest, false)
 	if err != nil {
@@ -276,6 +291,11 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 		}
 	}
 
+	return d.summarize(j, r, res, logf)
+}
+
+// summarize writes the result of a sync to the log and returns status and message.
+func (d *Daemon) summarize(j config.Job, r *api.Run, res syncer.Result, logf func(string)) (string, string) {
 	size := api.HumanBytes(res.Stats.BytesTransferred)
 	var summary string
 	switch {

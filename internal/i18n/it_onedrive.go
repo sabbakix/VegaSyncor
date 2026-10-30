@@ -1,0 +1,90 @@
+package i18n
+
+func init() {
+	addItalian(map[string]string{
+		// package cloud (rclone)
+		"this address belongs to another sign-in: start it again and use the new link": "questo indirizzo appartiene a un altro accesso: ricomincia e usa il nuovo link",
+		"no answer from Microsoft: try again":                                          "nessuna risposta da Microsoft: riprova",
+		"sign-in refused by Microsoft:":                                                "accesso rifiutato da Microsoft:",
+		"sign-in failed:":                                                              "accesso non riuscito:",
+		"sign-in failed: invalid token":                                                "accesso non riuscito: token non valido",
+		"rclone is not installed (apt install rclone)":                                 "rclone non è installato (apt install rclone)",
+		"some files were not copied: see the log":                                      "alcuni file non sono stati copiati: vedi il log",
+		"rclone exit code %d":                                                          "rclone ha terminato con codice %d",
+		"paste the whole address shown by the browser after the sign-in (it starts with http://localhost:53682/?code=)": "incolla l'indirizzo completo mostrato dal browser dopo l'accesso (inizia con http://localhost:53682/?code=)",
+
+		// config
+		"unknown connection type":                                                           "tipo di connessione sconosciuto",
+		"select a OneDrive connection":                                                      "seleziona una connessione OneDrive",
+		"OneDrive can only be used as destination":                                          "OneDrive può essere usato solo come destinazione",
+		"log folder: choose a folder of this server or a network folder":                    "cartella dei log: scegli una cartella di questo server o di rete",
+		"deleted items folder: OneDrive can be used only with a OneDrive destination":       "cartella degli eliminati: OneDrive si può usare solo con una destinazione OneDrive",
+		"deleted items folder: with a OneDrive destination it must be on the same OneDrive": "cartella degli eliminati: con una destinazione OneDrive deve essere sullo stesso OneDrive",
+		"with encryption the deleted items are kept in the archive folder of the destination: leave the deleted items folder on default": "con la cifratura gli eliminati restano nella cartella archivio della destinazione: lascia la cartella degli eliminati sul valore predefinito",
+		"encrypted files cannot be compared by content: turn off 'Compare contents'":                                                     "i file cifrati non si possono confrontare per contenuto: disattiva 'Confronta contenuto'",
+		"encryption: enter the password":          "cifratura: inserisci la password",
+		"OneDrive: sign in to choose the account": "OneDrive: accedi per scegliere l'account",
+
+		// service
+		"%d jobs copy to OneDrive but %s":                                     "%d job copiano su OneDrive ma %s",
+		"OneDrive %s: not signed in (edit the connection and sign in)":        "OneDrive %s: accesso non effettuato (modifica la connessione e accedi)",
+		"encryption: the password cannot be read (enter it again in the job)": "cifratura: la password non è leggibile (inseriscila di nuovo nel job)",
+		"connecting to OneDrive":                                              "connessione a OneDrive",
+		"contents only":                                                       "solo contenuto",
+		"contents and names":                                                  "contenuto e nomi",
+		"Encryption:  on (%s)":                                                "Cifratura:    attiva (%s)",
+		"access granted: %s free of %s":                                       "accesso riuscito: %s liberi su %s",
+		"the sign-in is no longer active: start it again":                     "l'accesso non è più attivo: ricomincia",
+		"not installed: needed only to copy to OneDrive (apt install rclone)": "non installato: serve solo per copiare su OneDrive (apt install rclone)",
+		"OneDrive (HTTPS to Microsoft)":                                       "OneDrive (HTTPS verso Microsoft)",
+
+		// job form
+		"OneDrive account": "Account OneDrive",
+		"OneDrive account to copy to (add it in the Connections tab)": "account OneDrive su cui copiare (aggiungilo nella scheda Connessioni)",
+		"e.g. Backup/Accounting (empty = root of OneDrive)":           "es. Backup/Contabilita (vuoto = radice di OneDrive)",
+		"Encrypt files": "Cifra i file",
+		"files are encrypted on this server before the upload: Microsoft cannot read them, but they can only be read back with VegaSyncor/rclone and the password": "i file vengono cifrati su questo server prima del caricamento: Microsoft non può leggerli, ma si possono rileggere solo con VegaSyncor/rclone e la password",
+		"Encrypt names too": "Cifra anche i nomi",
+		"also file and folder names are unreadable on OneDrive": "anche i nomi di file e cartelle non sono leggibili su OneDrive",
+		"Encryption password": "Password di cifratura",
+		"WITHOUT THIS PASSWORD THE COPY CANNOT BE READ: keep it somewhere safe (it is also in the configuration exports); changing it later uploads everything again": "SENZA QUESTA PASSWORD LA COPIA NON È LEGGIBILE: conservala in un luogo sicuro (è anche nelle esportazioni della configurazione); cambiarla in seguito ricarica tutto da capo",
+		"OneDrive folder":       "Cartella OneDrive",
+		"%s  (OneDrive %s, %s)": "%s  (OneDrive %s, %s)",
+		"(none – add a OneDrive connection in the Connections tab)": "(nessuna – aggiungi una connessione OneDrive nella scheda Connessioni)",
+		"OneDrive (off-site copy)":                                  "OneDrive (copia fuori sede)",
+		"at least 8 characters":                                     "almeno 8 caratteri",
+		"unchanged (type a new one to change it)":                   "invariata (digitane una nuova per cambiarla)",
+		"add a OneDrive connection first (Connections tab)":         "aggiungi prima una connessione OneDrive (scheda Connessioni)",
+		"ENCRYPTED": "CIFRATO",
+
+		// connection form and list
+		"Account":   "Account",
+		"[sign in]": "[accedi]",
+		"Enter to sign in to the Microsoft account (personal or work): you open a link in a browser on your PC or phone, and paste back the address it lands on": "Invio per accedere all'account Microsoft (personale o di lavoro): apri un link in un browser sul PC o sul telefono e incolla qui l'indirizzo su cui arriva",
+		"not signed in": "accesso non effettuato",
+		"a shared folder on the network (source or destination), or a OneDrive account for off-site copies (destination only)": "una cartella condivisa in rete (sorgente o destinazione), oppure un account OneDrive per copie fuori sede (solo destinazione)",
+		"OneDrive": "OneDrive",
+		"sign in to OneDrive first (Enter on the account)": "accedi prima a OneDrive (Invio sull'account)",
+		"signed in":     "accesso fatto",
+		"NOT SIGNED IN": "NON COLLEGATO",
+
+		// sign-in screen
+		"paste the address shown by the browser after the sign-in": "incolla l'indirizzo mostrato dal browser dopo l'accesso",
+		"ctrl+k copy link · enter confirm · esc cancel":            "ctrl+k copia link · invio conferma · esc annulla",
+		"Sign in to OneDrive":                                  "Accesso a OneDrive",
+		"preparing the sign-in…":                               "preparazione dell'accesso…",
+		"Press enter to try again.":                            "Premi invio per riprovare.",
+		"enter try again · esc cancel":                         "invio riprova · esc annulla",
+		"Open this address in a browser, on your PC or phone:": "Apri questo indirizzo in un browser, sul PC o sul telefono:",
+		"(select it with the mouse — hold Shift while selecting — or press ctrl+k to copy it)": "(selezionalo con il mouse — tenendo premuto Maiusc — oppure premi ctrl+k per copiarlo)",
+		"[copy link]":                         "[copia link]",
+		"copied (if your terminal allows it)": "copiato (se il terminale lo consente)",
+		"Sign in with the Microsoft account (personal or work) and accept.":                         "Accedi con l'account Microsoft (personale o di lavoro) e accetta.",
+		"The browser then shows an error page (\"localhost\" cannot be reached): that is expected.": "Il browser mostra poi una pagina di errore (\"localhost\" non raggiungibile): è normale.",
+		"Copy the whole address from the address bar and paste it here:":                            "Copia l'indirizzo completo dalla barra degli indirizzi e incollalo qui:",
+		"signing in…": "accesso in corso…",
+		"Press enter to get a new link and try again.":                 "Premi invio per avere un nuovo link e riprovare.",
+		"enter new link · esc cancel":                                  "invio nuovo link · esc annulla",
+		"Signed in to OneDrive as %s: save the connection with ctrl+s": "Accesso a OneDrive come %s: salva la connessione con ctrl+s",
+	})
+}

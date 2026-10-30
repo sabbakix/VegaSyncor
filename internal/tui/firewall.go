@@ -218,6 +218,8 @@ func ruleText(r firewall.Rule) string {
 		return T("web: updates (HTTP/HTTPS)")
 	case firewall.KindSMB:
 		return T("SMB to the connection hosts")
+	case firewall.KindCloud:
+		return T("OneDrive (HTTPS to Microsoft)")
 	case firewall.KindDrop:
 		return T("everything else (logged)")
 	}

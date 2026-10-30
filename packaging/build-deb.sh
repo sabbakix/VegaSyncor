@@ -30,7 +30,7 @@ Priority: optional
 Architecture: $a
 Installed-Size: $SIZE
 Depends: rsync, cifs-utils
-Recommends: smbclient, nftables
+Recommends: smbclient, nftables, rclone
 Maintainer: VegaSyncor <root@localhost>
 Description: scheduled sync of network folders for backup
  Service and text-based interface (TUI) to periodically copy

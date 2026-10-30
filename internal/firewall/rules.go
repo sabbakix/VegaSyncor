@@ -27,6 +27,7 @@ const (
 	KindDNS         = "dns"
 	KindNTP         = "ntp"
 	KindWeb         = "web"
+	KindCloud       = "cloud" // OneDrive: HTTPS to Microsoft (addresses change, so any host)
 	KindSMB         = "smb"
 	KindUser        = "user"
 	KindDrop        = "drop"
@@ -49,7 +50,7 @@ type Rule struct {
 
 // Plan returns the rules of the lockdown preset for f. smbHosts are the IP
 // addresses of the hosts in the connections (resolved by the caller).
-func Plan(f config.Firewall, smbHosts []string) []Rule {
+func Plan(f config.Firewall, smbHosts []string, cloud bool) []Rule {
 	var in, out []Rule
 	b := func(id, kind, dir, action, proto string, ports, hosts []string) Rule {
 		return Rule{ID: id, Kind: kind, Builtin: true, Direction: dir, Action: action, Proto: proto, Ports: ports, Hosts: hosts}
@@ -108,6 +109,9 @@ func Plan(f config.Firewall, smbHosts []string) []Rule {
 	)
 	if f.AllowWeb {
 		out = append(out, b("out-web", KindWeb, config.FwOut, config.FwAllow, config.FwTCP, []string{"80", "443"}, nil))
+	}
+	if cloud && !f.AllowWeb {
+		out = append(out, b("out-cloud", KindCloud, config.FwOut, config.FwAllow, config.FwTCP, []string{"443"}, nil))
 	}
 	if len(smbHosts) > 0 {
 		out = append(out, b("out-smb", KindSMB, config.FwOut, config.FwAllow, config.FwTCP, []string{"139", "445"}, smbHosts))

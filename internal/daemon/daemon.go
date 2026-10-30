@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"vegasyncor/internal/api"
+	"vegasyncor/internal/cloud"
 	"vegasyncor/internal/config"
 	"vegasyncor/internal/i18n"
 	"vegasyncor/internal/mount"
@@ -109,7 +110,18 @@ func (d *Daemon) warnings() []string {
 	for _, p := range d.cfg.DestConflicts() {
 		out = append(out, Tf("jobs %q and %q write to the same destination: a mirror deletes the other job's files", p[0].Name, p[1].Name))
 	}
+	cloudJobs := 0
+	for _, j := range d.cfg.Jobs {
+		if j.Dest.Type == config.LocOneDrive {
+			cloudJobs++
+		}
+	}
 	d.mu.Unlock()
+	if cloudJobs > 0 {
+		if err := cloud.Available(); err != nil {
+			out = append(out, Tf("%d jobs copy to OneDrive but %s", cloudJobs, err.Error()))
+		}
+	}
 	return out
 }
 

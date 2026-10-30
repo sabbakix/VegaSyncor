@@ -82,6 +82,28 @@ type ConnectionView struct {
 type ConnectionInput struct {
 	config.Connection
 	Password string `json:"password,omitempty"`
+	// Token: OneDrive sign-in token (JSON) from OneDriveFinish, when it changes.
+	Token string `json:"token,omitempty"`
+}
+
+// OneDriveStart is the answer to the start of a OneDrive sign-in.
+type OneDriveStart struct {
+	Session string `json:"session"`
+	URL     string `json:"url"` // Microsoft sign-in page to open in a browser
+}
+
+// OneDriveFinishRequest completes a sign-in with the address the browser landed on.
+type OneDriveFinishRequest struct {
+	Session  string `json:"session"`
+	Redirect string `json:"redirect"`
+}
+
+// OneDriveAccount is the result of a sign-in: the token and the drive.
+type OneDriveAccount struct {
+	Token     string `json:"token"`
+	DriveID   string `json:"drive_id"`
+	DriveType string `json:"drive_type"`
+	Account   string `json:"account"`
 }
 
 type JobStatus struct {
@@ -291,6 +313,18 @@ func (c *Client) Export(passphrase string) ([]byte, error) {
 func (c *Client) Import(data []byte, passphrase string) (*ImportResponse, error) {
 	var out ImportResponse
 	return &out, c.do("POST", "/api/import", ImportRequest{Data: data, Passphrase: passphrase}, &out)
+}
+
+// OneDriveSignIn starts a OneDrive sign-in.
+func (c *Client) OneDriveSignIn() (*OneDriveStart, error) {
+	var out OneDriveStart
+	return &out, c.do("POST", "/api/onedrive/signin", nil, &out)
+}
+
+// OneDriveFinish completes a sign-in with the address pasted by the user.
+func (c *Client) OneDriveFinish(session, redirect string) (*OneDriveAccount, error) {
+	var out OneDriveAccount
+	return &out, c.do("POST", "/api/onedrive/finish", OneDriveFinishRequest{Session: session, Redirect: redirect}, &out)
 }
 
 func (c *Client) SaveJob(j config.Job) (*config.Job, error) {

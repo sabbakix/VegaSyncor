@@ -62,6 +62,8 @@ type Payload struct {
 	Config config.Config `json:"config"` // PasswordEnc fields are empty
 	// Passwords of the connections, by connection ID (clear text inside the payload).
 	Passwords map[string]string `json:"passwords"`
+	// CryptPasswords: encryption passwords of the jobs (OneDrive), by job ID.
+	CryptPasswords map[string]string `json:"crypt_passwords,omitempty"`
 }
 
 // ErrPassphrase is returned (use errors.Is) when the passphrase is wrong or the

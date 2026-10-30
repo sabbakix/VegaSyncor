@@ -66,6 +66,8 @@ func (d *Daemon) serveAPI() (*http.Server, error) {
 	mux.HandleFunc("PUT /api/connections/{id}", d.handleSaveConn)
 	mux.HandleFunc("DELETE /api/connections/{id}", d.handleDeleteConn)
 	mux.HandleFunc("POST /api/connections/{id}/test", d.handleTestConn)
+	mux.HandleFunc("POST /api/onedrive/signin", d.handleOneDriveSignIn)
+	mux.HandleFunc("POST /api/onedrive/finish", d.handleOneDriveFinish)
 
 	mux.HandleFunc("POST /api/export", d.handleExport)
 	mux.HandleFunc("POST /api/import", d.handleImport)
@@ -160,6 +162,11 @@ func (d *Daemon) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 	} else {
 		j.ID = config.NewID()
 	}
+	if old := d.cfg.Job(j.ID); old != nil && j.CryptPassword == "" {
+		j.CryptPassEnc = old.CryptPassEnc // password not changed
+	} else {
+		j.CryptPassEnc = ""
+	}
 	if err := j.Validate(d.cfg); err != nil {
 		fail(w, 400, err)
 		return
@@ -178,6 +185,15 @@ func (d *Daemon) handleSaveJob(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if j.Encrypt && j.CryptPassword != "" {
+		enc, err := d.box.Encrypt(j.CryptPassword, config.CryptAAD(j.ID))
+		if err != nil {
+			fail(w, 500, err)
+			return
+		}
+		j.CryptPassEnc = enc
+	}
+	j.CryptPassword = ""
 	if existing := d.cfg.Job(j.ID); existing != nil {
 		*existing = j
 	} else {
@@ -302,6 +318,25 @@ func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
+	if c.IsOneDrive() {
+		in.Password = ""
+		if in.Token != "" {
+			if strings.ContainsAny(in.Token, "\r\n") {
+				fail(w, 400, errors.New("invalid token"))
+				return
+			}
+			enc, err := d.box.Encrypt(in.Token, c.ID)
+			if err != nil {
+				fail(w, 500, err)
+				return
+			}
+			c.PasswordEnc = enc
+		}
+		if c.PasswordEnc == "" {
+			fail(w, 400, errors.New(T("OneDrive: sign in to choose the account")))
+			return
+		}
+	}
 	if in.Password != "" {
 		if strings.ContainsAny(in.Password, "\r\n") {
 			fail(w, 400, errors.New(T("the password cannot contain line breaks")))
@@ -323,7 +358,7 @@ func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 		fail(w, 500, err)
 		return
 	}
-	slog.Info("connection saved", "name", c.Name, "host", c.Host, "user", c.Username)
+	slog.Info("connection saved", "name", c.Name, "kind", c.Kind, "host", c.Host, "user", c.Username, "account", c.Account)
 	go d.fwRefresh(true) // the outgoing SMB rule follows the connection hosts
 	reply(w, viewConn(c))
 }
@@ -361,6 +396,12 @@ func (d *Daemon) handleTestConn(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	if cfg.Connection(id) == nil {
 		fail(w, 404, errors.New(T("connection not found")))
+		return
+	}
+	if cfg.Connection(id).IsOneDrive() {
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
+		defer cancel()
+		reply(w, d.testOneDrive(ctx, cfg, id))
 		return
 	}
 	t, err := d.smbTarget(cfg, config.Location{Type: config.LocSMB, ConnectionID: id})
@@ -424,6 +465,15 @@ func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
+	if in.Location.Type == config.LocOneDrive {
+		resp, err := d.browseOneDrive(ctx, in.Location)
+		if err != nil {
+			fail(w, 400, err)
+			return
+		}
+		reply(w, resp)
+		return
+	}
 	dir, loc, cleanup, err := d.openLocation(ctx, in.Location, false)
 	if err != nil {
 		fail(w, 400, err)
@@ -465,6 +515,18 @@ func (d *Daemon) handleMkdir(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
+	if in.Location.Type == config.LocOneDrive {
+		p, err := d.mkdirOneDrive(ctx, in.Location, name)
+		switch {
+		case errors.Is(err, errAlreadyExists):
+			fail(w, 409, errors.New(T("a folder with this name already exists")))
+		case err != nil:
+			fail(w, 400, fmt.Errorf(T("creating the folder: %w"), err))
+		default:
+			reply(w, map[string]string{"path": p})
+		}
+		return
+	}
 	dir, loc, cleanup, err := d.openLocation(ctx, in.Location, true)
 	if err != nil {
 		fail(w, 400, err)

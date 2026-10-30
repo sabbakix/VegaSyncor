@@ -14,21 +14,34 @@ import (
 	"strings"
 )
 
-// Connection describes an SMB/CIFS server and its credentials.
+// Connection describes an SMB/CIFS server and its credentials, or a OneDrive
+// account (Kind ConnOneDrive) whose sign-in token is kept in PasswordEnc.
 type Connection struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Host        string `json:"host"`
+	Kind        string `json:"kind,omitempty"` // "" = SMB, ConnOneDrive
+	Host        string `json:"host,omitempty"`
 	Domain      string `json:"domain,omitempty"`
 	Username    string `json:"username"`
 	PasswordEnc string `json:"password_enc,omitempty"`
 	// SMBVersion: "" = automatic negotiation, otherwise "3.1.1", "3.0", "2.1", "2.0", "1.0".
 	SMBVersion string `json:"smb_version,omitempty"`
+
+	// OneDrive: account shown to the user, and the drive the files go to.
+	Account   string `json:"account,omitempty"`
+	DriveID   string `json:"drive_id,omitempty"`
+	DriveType string `json:"drive_type,omitempty"` // personal, business, documentLibrary
 }
 
+// ConnOneDrive is the kind of the OneDrive connections (off-site copies).
+const ConnOneDrive = "onedrive"
+
+func (cn *Connection) IsOneDrive() bool { return cn.Kind == ConnOneDrive }
+
 const (
-	LocSMB   = "smb"
-	LocLocal = "local"
+	LocSMB      = "smb"
+	LocLocal    = "local"
+	LocOneDrive = "onedrive" // destination only
 )
 
 // Location is a folder: local to the server or on an SMB share.
@@ -102,13 +115,25 @@ type Job struct {
 	// LogCompressDays: logs in LogDir older than this are moved into monthly
 	// zip files (0 = never).
 	LogCompressDays int `json:"log_compress_days,omitempty"`
+
+	// Encrypt encrypts the files before they are uploaded to OneDrive (rclone
+	// crypt), with the password in CryptPassEnc (encrypted with the master key).
+	Encrypt      bool   `json:"encrypt,omitempty"`
+	EncryptNames bool   `json:"encrypt_names,omitempty"` // file and folder names too
+	CryptPassEnc string `json:"crypt_password_enc,omitempty"`
+	// CryptPassword is only sent by the TUI when the password is set or
+	// changed; the service encrypts it into CryptPassEnc and never stores it.
+	CryptPassword string `json:"crypt_password,omitempty"`
 }
+
+// CryptAAD binds the encrypted encryption password of a job to the job.
+func CryptAAD(jobID string) string { return "crypt:" + jobID }
 
 // ConnectionIDs lists the connections used by the job (each once).
 func (j Job) ConnectionIDs() []string {
 	var out []string
 	for _, l := range []*Location{&j.Source, &j.Dest, j.Archive, j.LogDir} {
-		if l != nil && l.Type == LocSMB && l.ConnectionID != "" && !slices.Contains(out, l.ConnectionID) {
+		if l != nil && l.Type != LocLocal && l.ConnectionID != "" && !slices.Contains(out, l.ConnectionID) {
 			out = append(out, l.ConnectionID)
 		}
 	}
@@ -191,6 +216,25 @@ var hostRe = regexp.MustCompile(`^[A-Za-z0-9._:\-\[\]]+$`)
 
 func (cn *Connection) Validate() error {
 	cn.Name = strings.TrimSpace(cn.Name)
+	if cn.IsOneDrive() {
+		cn.Host, cn.Username, cn.Domain, cn.SMBVersion = "", "", "", ""
+		if cn.Name == "" {
+			return errors.New(T("the connection name is required"))
+		}
+		switch cn.DriveType {
+		case "personal", "business", "documentLibrary":
+		default:
+			return errors.New(T("OneDrive: sign in to choose the account"))
+		}
+		if cn.DriveID == "" || strings.ContainsAny(cn.DriveID, "\r\n") {
+			return errors.New(T("OneDrive: sign in to choose the account"))
+		}
+		return nil
+	}
+	if cn.Kind != "" {
+		return errors.New(T("unknown connection type"))
+	}
+	cn.Account, cn.DriveID, cn.DriveType = "", "", ""
 	cn.Host = strings.Trim(strings.TrimSpace(cn.Host), `\/`)
 	cn.Username = strings.TrimSpace(cn.Username)
 	cn.Domain = strings.TrimSpace(cn.Domain)
@@ -231,7 +275,7 @@ func CleanSubPath(p string) (string, error) {
 func (l *Location) validate(c *Config, what string) error {
 	switch l.Type {
 	case LocSMB:
-		if c.Connection(l.ConnectionID) == nil {
+		if cn := c.Connection(l.ConnectionID); cn == nil || cn.IsOneDrive() {
 			return errors.New(what + ": " + T("select a connection"))
 		}
 		l.Share = strings.Trim(strings.TrimSpace(l.Share), `\/`)
@@ -252,6 +296,16 @@ func (l *Location) validate(c *Config, what string) error {
 		if l.Path == "/" {
 			return errors.New(what + ": " + T("the root / cannot be used"))
 		}
+	case LocOneDrive:
+		if cn := c.Connection(l.ConnectionID); cn == nil || !cn.IsOneDrive() {
+			return errors.New(what + ": " + T("select a OneDrive connection"))
+		}
+		l.Share = ""
+		p, err := CleanSubPath(l.Path)
+		if err != nil {
+			return fmt.Errorf("%s: %w", what, err)
+		}
+		l.Path = p
 	default:
 		return errors.New(what + ": " + T("unknown type"))
 	}
@@ -273,6 +327,12 @@ func (l Location) Display(c *Config) string {
 		return s
 	case LocLocal:
 		return l.Path
+	case LocOneDrive:
+		name := "?"
+		if cn := c.Connection(l.ConnectionID); cn != nil {
+			name = cn.Name
+		}
+		return "OneDrive " + name + ":/" + l.Path
 	}
 	return "?"
 }
@@ -284,6 +344,9 @@ func (j *Job) Validate(c *Config) error {
 	}
 	if err := j.Source.validate(c, T("source")); err != nil {
 		return err
+	}
+	if j.Source.Type == LocOneDrive {
+		return errors.New(T("OneDrive can only be used as destination"))
 	}
 	if err := j.Dest.validate(c, T("destination")); err != nil {
 		return err
@@ -324,6 +387,9 @@ func (j *Job) Validate(c *Config) error {
 	if j.LogCompressDays < 0 {
 		return errors.New(T("invalid number of days for the log compression"))
 	}
+	if err := j.validateCloud(c); err != nil {
+		return err
+	}
 	var ex []string
 	for _, e := range j.Excludes {
 		if e = strings.TrimSpace(e); e != "" {
@@ -332,6 +398,37 @@ func (j *Job) Validate(c *Config) error {
 	}
 	j.Excludes = ex
 	return j.Schedule.Validate()
+}
+
+// validateCloud checks the settings that depend on a OneDrive destination.
+func (j *Job) validateCloud(c *Config) error {
+	if j.LogDir != nil && j.LogDir.Type == LocOneDrive {
+		return errors.New(T("log folder: choose a folder of this server or a network folder"))
+	}
+	if j.Dest.Type != LocOneDrive {
+		if j.Archive != nil && j.Archive.Type == LocOneDrive {
+			return errors.New(T("deleted items folder: OneDrive can be used only with a OneDrive destination"))
+		}
+		j.Encrypt, j.EncryptNames, j.CryptPassEnc, j.CryptPassword = false, false, "", ""
+		return nil
+	}
+	if a := j.Archive; a != nil && (a.Type != LocOneDrive || a.ConnectionID != j.Dest.ConnectionID) {
+		return errors.New(T("deleted items folder: with a OneDrive destination it must be on the same OneDrive"))
+	}
+	if j.Encrypt {
+		if j.Archive != nil {
+			return errors.New(T("with encryption the deleted items are kept in the archive folder of the destination: leave the deleted items folder on default"))
+		}
+		if j.Checksum {
+			return errors.New(T("encrypted files cannot be compared by content: turn off 'Compare contents'"))
+		}
+		if j.CryptPassword == "" && j.CryptPassEnc == "" {
+			return errors.New(T("encryption: enter the password"))
+		}
+	} else {
+		j.EncryptNames, j.CryptPassEnc, j.CryptPassword = false, "", ""
+	}
+	return nil
 }
 
 // validateFolder checks a folder written by the job besides the destination
@@ -361,39 +458,59 @@ func (c *Config) Within(child, parent Location) bool {
 	return ok
 }
 
+// locRoot identifies the storage a location is on, and its path there. SMB
+// locations are compared by host and share (not by connection: two connections
+// with different users can point to the same server) and OneDrive ones by drive,
+// case-insensitively like Windows; local paths are compared exactly.
+func (c *Config) locRoot(l Location) (root, p string, fold, ok bool) {
+	switch l.Type {
+	case LocSMB:
+		cn := c.Connection(l.ConnectionID)
+		if cn == nil {
+			return "", "", false, false
+		}
+		p, _ = CleanSubPath(l.Path)
+		return "smb:" + strings.ToLower(cn.Host) + "/" + strings.ToLower(l.Share), p, true, true
+	case LocOneDrive:
+		cn := c.Connection(l.ConnectionID)
+		if cn == nil {
+			return "", "", false, false
+		}
+		p, _ = CleanSubPath(l.Path)
+		return "onedrive:" + strings.ToLower(cn.DriveID), p, true, true
+	case LocLocal:
+		return "local", filepath.Clean(l.Path), false, true
+	}
+	return "", "", false, false
+}
+
 // RelPath returns the path of child relative to parent ("" when they are the
 // same folder) if child is parent or inside it.
 func (c *Config) RelPath(child, parent Location) (string, bool) {
-	if child.Type != parent.Type {
+	rc, pc, fold, ok1 := c.locRoot(child)
+	rp, pp, _, ok2 := c.locRoot(parent)
+	if !ok1 || !ok2 || rc != rp {
 		return "", false
 	}
-	pc, pp := child.Path, parent.Path
-	if child.Type == LocSMB {
-		cc, cp := c.Connection(child.ConnectionID), c.Connection(parent.ConnectionID)
-		if cc == nil || cp == nil || !strings.EqualFold(cc.Host, cp.Host) || !strings.EqualFold(child.Share, parent.Share) {
+	if !fold {
+		rel, err := filepath.Rel(pp, pc)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
 			return "", false
 		}
-		pc, _ = CleanSubPath(pc)
-		pp, _ = CleanSubPath(pp)
-		if pp == "" {
-			return pc, true
+		if rel == "." {
+			rel = ""
 		}
-		if strings.EqualFold(pc, pp) {
-			return "", true
-		}
-		if len(pc) > len(pp) && strings.EqualFold(pc[:len(pp)+1], pp+"/") {
-			return pc[len(pp)+1:], true
-		}
-		return "", false
+		return rel, true
 	}
-	rel, err := filepath.Rel(filepath.Clean(pp), filepath.Clean(pc))
-	if err != nil || rel == ".." || strings.HasPrefix(rel, "../") {
-		return "", false
+	switch {
+	case pp == "":
+		return pc, true
+	case strings.EqualFold(pc, pp):
+		return "", true
+	case len(pc) > len(pp) && strings.EqualFold(pc[:len(pp)+1], pp+"/"):
+		return pc[len(pp)+1:], true
 	}
-	if rel == "." {
-		rel = ""
-	}
-	return rel, true
+	return "", false
 }
 
 // FolderConflict checks the archive and log folders of j against the other
@@ -461,28 +578,9 @@ func (c *Config) DestConflicts() [][2]*Job {
 func isMirror(mode string) bool { return mode == ModeMirror || mode == ModeMirrorArchive }
 
 // locationsOverlap reports whether a and b are the same folder or one contains
-// the other. SMB locations are compared by host and share (not by connection: two
-// connections with different users can point to the same server), case-insensitively
-// like Windows and Samba; local paths are compared exactly.
+// the other (see RelPath for how folders are compared).
 func (c *Config) locationsOverlap(a, b Location) bool {
-	if a.Type != b.Type {
-		return false
-	}
-	pa, pb := a.Path, b.Path
-	if a.Type == LocSMB {
-		ca, cb := c.Connection(a.ConnectionID), c.Connection(b.ConnectionID)
-		if ca == nil || cb == nil || !strings.EqualFold(ca.Host, cb.Host) || !strings.EqualFold(a.Share, b.Share) {
-			return false
-		}
-		pa, _ = CleanSubPath(pa)
-		pb, _ = CleanSubPath(pb)
-		// leading "/" so that the share root ("") contains every subfolder
-		pa, pb = "/"+strings.ToLower(pa), "/"+strings.ToLower(pb)
-	} else {
-		pa, pb = filepath.Clean(pa), filepath.Clean(pb)
-	}
-	pa, pb = strings.TrimSuffix(pa, "/")+"/", strings.TrimSuffix(pb, "/")+"/"
-	return strings.HasPrefix(pa, pb) || strings.HasPrefix(pb, pa)
+	return c.Within(a, b) || c.Within(b, a)
 }
 
 // CleanFolderName validates the name of a new folder: it must be a single

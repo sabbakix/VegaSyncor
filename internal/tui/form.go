@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 	zone "github.com/lrstanley/bubblezone"
 	"github.com/mattn/go-runewidth"
 
@@ -21,6 +22,7 @@ const (
 	fChoice
 	fBool
 	fDays
+	fAction // read-only value with a button (e.g. OneDrive sign-in)
 )
 
 type option struct {
@@ -41,6 +43,9 @@ type field struct {
 	orig             string // value when the form was opened (to show changed fields)
 	LabelFn          func(f *form) string
 	HelpFn           func(f *form) string // description depending on the chosen value
+	PlaceholderFn    func(f *form) string // placeholder depending on other fields
+	Text             string               // fAction: value shown
+	Button           string               // fAction: button label
 }
 
 type form struct {
@@ -50,6 +55,7 @@ type form struct {
 	Err    string
 	warned bool // a warning was shown: the next save goes ahead
 	offset int
+	orig   *config.Connection // connection being edited (connection form)
 }
 
 func newText(key, label, value, placeholder string) *field {
@@ -94,6 +100,12 @@ func newDays(key, label string, days []int) *field {
 	return f
 }
 
+// newAction is a read-only field with a button: Enter (or a click) runs the
+// action of the form for the field key.
+func newAction(key, label, text, button string) *field {
+	return &field{Key: key, Label: label, Kind: fAction, Text: text, Button: button, Browse: true}
+}
+
 func section(label string) *field { return &field{Kind: fSection, Label: label} }
 
 func (f *field) withHelp(h string) *field             { f.Help = h; return f }
@@ -101,11 +113,15 @@ func (f *field) when(fn func(*form) bool) *field      { f.Visible = fn; return f
 func (f *field) labeled(fn func(*form) string) *field { f.LabelFn = fn; return f }
 func (f *field) helpFn(fn func(*form) string) *field  { f.HelpFn = fn; return f }
 func (f *field) browsable() *field                    { f.Browse = true; return f }
-func (f *field) focusable() bool                      { return f.Kind != fSection }
-func (f *field) value() string                        { return strings.TrimSpace(f.Input.Value()) }
-func (f *field) choice() string                       { return f.Options[f.Sel].Value }
-func (f *field) setValue(v string)                    { f.Input.SetValue(v); f.Input.CursorEnd() }
-func (fm *form) visible(f *field) bool                { return f.Visible == nil || f.Visible(fm) }
+func (f *field) placeholder(fn func(*form) string) *field {
+	f.PlaceholderFn = fn
+	return f
+}
+func (f *field) focusable() bool       { return f.Kind != fSection }
+func (f *field) value() string         { return strings.TrimSpace(f.Input.Value()) }
+func (f *field) choice() string        { return f.Options[f.Sel].Value }
+func (f *field) setValue(v string)     { f.Input.SetValue(v); f.Input.CursorEnd() }
+func (fm *form) visible(f *field) bool { return f.Visible == nil || f.Visible(fm) }
 func (fm *form) get(key string) *field {
 	for _, f := range fm.Fields {
 		if f.Key == key {
@@ -147,6 +163,8 @@ func (f *field) snapshot() string {
 		return fmt.Sprint(f.Bool)
 	case fDays:
 		return fmt.Sprint(f.Days)
+	case fAction:
+		return f.Text
 	}
 	return ""
 }
@@ -319,6 +337,9 @@ func (fm *form) render(width, height int) string {
 }
 
 func (fm *form) renderValue(i int, f *field, focused bool, w int) string {
+	if f.PlaceholderFn != nil {
+		f.Input.Placeholder = f.PlaceholderFn(fm)
+	}
 	switch f.Kind {
 	case fText, fPassword:
 		hint := T("[browse]")
@@ -343,6 +364,18 @@ func (fm *form) renderValue(i int, f *field, focused bool, w int) string {
 		return lbl
 	case fBool:
 		return checkbox(f.Bool)
+	case fAction:
+		btn := sMuted
+		if focused {
+			btn = sKey
+		}
+		avail := max(w-runewidth.StringWidth(f.Button)-2, 10)
+		plain, style := f.Text, lipgloss.NewStyle()
+		if plain == "" {
+			plain, style = f.Input.Placeholder, sMuted
+		}
+		plain = pad(plain, avail) // on the plain text: the width of styled text is not its length
+		return style.Render(plain) + "  " + zone.Mark(fmt.Sprintf("browse:%d", i), btn.Render(f.Button))
 	case fDays:
 		var parts []string
 		for idx, d := range config.WeekOrder {

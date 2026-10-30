@@ -27,6 +27,8 @@ func (m *Model) render() string {
 	switch {
 	case m.logOpen:
 		return m.viewLog()
+	case m.signin != nil:
+		body, help = m.viewSignIn()
 	case m.form != nil:
 		body, help = m.viewForm()
 	case m.st == nil && m.connErr != nil:
@@ -49,7 +51,7 @@ func (m *Model) render() string {
 	header := m.viewHeader()
 	footer := m.viewFooter(help)
 	bodyH := m.h - lipgloss.Height(header) - lipgloss.Height(footer)
-	if m.form != nil && !m.logOpen {
+	if m.form != nil && !m.logOpen && m.signin == nil {
 		// description bar anchored at the bottom, above the keys
 		body = fitHeight(body, bodyH-formDescHeight) + "\n" + m.viewFormDescription()
 	} else {
@@ -349,7 +351,11 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 		ro = "  " + sROBadge.Render(T("READ-ONLY"))
 	}
 	lines = append(lines, lbl(T("From"))+trunc(j.Source, w-36)+ro)
-	lines = append(lines, lbl(T("To"))+trunc(j.Dest, w-20))
+	enc := ""
+	if j.Job.Encrypt {
+		enc = "  " + sROBadge.Render(T("ENCRYPTED"))
+	}
+	lines = append(lines, lbl(T("To"))+trunc(j.Dest, w-36)+enc)
 	mode := config.ModeLabel(j.Job.Mode)
 	if j.Job.Mode == config.ModeMirrorArchive {
 		if j.Job.ArchiveDays > 0 {
@@ -460,7 +466,15 @@ func (m *Model) viewConns() (string, string) {
 		if !c.HasPassword {
 			pw = T("MISSING")
 		}
-		row := pad(c.Name, nameW) + " " + pad(c.Host, hostW) + " " + pad(user, userW) + " " +
+		host := c.Host
+		if c.IsOneDrive() { // HOST, USER, SMB, PASSWORD columns: OneDrive, account, drive type, sign-in
+			host, user, ver = "OneDrive", c.Account, driveTypeLabel(c.DriveType)
+			pw = T("signed in")
+			if !c.HasPassword {
+				pw = T("NOT SIGNED IN")
+			}
+		}
+		row := pad(c.Name, nameW) + " " + pad(host, hostW) + " " + pad(user, userW) + " " +
 			pad(ver, verW) + " " + pad(pw, pwW) + " " + Tf("%d jobs", used[c.ID])
 		line := "   " + row
 		if i == m.connCur {
@@ -583,8 +597,12 @@ func (m *Model) jobPreview() string {
 	}
 	loc := func(p string) config.Location {
 		l := config.Location{Type: fm.choice(p + "_type"), Path: fm.val(p + "_path")}
-		if l.Type == config.LocSMB {
+		switch l.Type {
+		case config.LocSMB:
 			l.ConnectionID, l.Share = fm.choice(p+"_conn"), fm.val(p+"_share")
+			l.Path = strings.Trim(strings.ReplaceAll(l.Path, `\`, "/"), "/")
+		case config.LocOneDrive:
+			l.ConnectionID = fm.choice("dst_odconn")
 			l.Path = strings.Trim(strings.ReplaceAll(l.Path, `\`, "/"), "/")
 		}
 		return l
@@ -612,6 +630,9 @@ func (m *Model) jobPreview() string {
 	}
 	dst := sMuted.Render(T("DESTINATION")) + "\n" + truncLeft(show(loc("dst")), inner) + "\n" +
 		sMuted.Render(trunc(config.ModeLabel(fm.choice("mode")), inner))
+	if fm.choice("dst_type") == config.LocOneDrive && fm.get("encrypt").Bool {
+		dst += "  " + sROBadge.Render(T("ENCRYPTED"))
+	}
 	arrow := lipgloss.NewStyle().Foreground(cAccent).Bold(true).Padding(0, 1).Render("\n──>")
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
 		boxStyle(part == secSource).Width(boxW).Render(src), arrow,
@@ -685,6 +706,13 @@ func (m *Model) viewBrowser(w int) string {
 			}
 		}
 		title += sMuted.Render("  " + T("on") + " " + `\\` + host)
+	}
+	if b.loc.Type == config.LocOneDrive {
+		for _, c := range m.conns() {
+			if c.ID == b.loc.ConnectionID {
+				title += sMuted.Render("  " + T("on") + " OneDrive " + c.Name)
+			}
+		}
 	}
 	path := sBold.Render(truncLeft(b.displayPath(), w-6))
 	var body string

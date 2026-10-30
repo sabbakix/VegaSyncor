@@ -104,6 +104,12 @@ func (m *Model) handleClick(msg tea.MouseMsg) tea.Cmd {
 		}
 	}
 
+	if m.signin != nil {
+		if hit("odcopy", msg) {
+			m.copyLink()
+		}
+		return nil
+	}
 	if m.logOpen {
 		if hit("logsearch", msg) {
 			return m.startLogSearch()
@@ -223,7 +229,7 @@ func (m *Model) formClick(msg tea.MouseMsg) tea.Cmd {
 		case hit(fmt.Sprintf("browse:%d", i), msg):
 			fm.setFocus(i)
 			fm.Err = ""
-			return m.startBrowse(f.Key)
+			return m.fieldAction(f)
 		case hit(fmt.Sprintf("fprev:%d", i), msg):
 			fm.setFocus(i)
 			f.Sel = (f.Sel - 1 + len(f.Options)) % len(f.Options)

@@ -23,7 +23,7 @@ func sampleFirewall() config.Firewall {
 }
 
 func TestScript(t *testing.T) {
-	s := Script(Plan(sampleFirewall(), []string{"192.168.1.30", "192.168.1.31"}))
+	s := Script(Plan(sampleFirewall(), []string{"192.168.1.30", "192.168.1.31"}, false))
 	for _, want := range []string{
 		"table inet vegasyncor\ndelete table inet vegasyncor\n",
 		"type filter hook input priority filter; policy drop;",
@@ -54,7 +54,7 @@ func TestScript(t *testing.T) {
 func TestScriptOptions(t *testing.T) {
 	f := config.DefaultFirewall()
 	f.AllowWeb, f.AllowPing = false, false
-	s := Script(Plan(f, nil))
+	s := Script(Plan(f, nil, true))
 	if strings.Contains(s, "vs:out-web") || strings.Contains(s, "vs:in-ping") || strings.Contains(s, "vs:out-smb") {
 		t.Errorf("disabled options still present:\n%s", s)
 	}
@@ -96,7 +96,7 @@ func TestScriptLoads(t *testing.T) {
 		t.Skip("set VEGASYNCOR_TEST_NFT to the nft command to run this test")
 	}
 	f := filepath.Join(t.TempDir(), "rules.nft")
-	script := Script(Plan(sampleFirewall(), []string{"192.168.1.30", "fd00::30"}))
+	script := Script(Plan(sampleFirewall(), []string{"192.168.1.30", "fd00::30"}, false))
 	if err := os.WriteFile(f, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -134,5 +134,31 @@ tcp   TIME-WAIT 0   0      192.168.1.10:40100 192.168.1.30:445`
 	}
 	if c[1].Direction != "out" || c[1].RemotePort != 445 || c[1].Process != "" {
 		t.Errorf("outgoing SMB (kernel) = %+v", c[1])
+	}
+}
+
+// With OneDrive connections the lockdown allows outgoing HTTPS (to any host:
+// Microsoft's addresses change), unless web access is already allowed.
+func TestCloudRule(t *testing.T) {
+	f := sampleFirewall()
+	f.AllowWeb = false
+	find := func(rules []Rule) *Rule {
+		for i := range rules {
+			if rules[i].Kind == KindCloud {
+				return &rules[i]
+			}
+		}
+		return nil
+	}
+	if find(Plan(f, nil, false)) != nil {
+		t.Error("cloud rule without OneDrive connections")
+	}
+	r := find(Plan(f, nil, true))
+	if r == nil || r.Direction != "out" || strings.Join(r.Ports, ",") != "443" || len(r.Hosts) != 0 {
+		t.Errorf("cloud rule = %+v", r)
+	}
+	f.AllowWeb = true
+	if find(Plan(f, nil, true)) != nil {
+		t.Error("cloud rule duplicated with web allowed")
 	}
 }

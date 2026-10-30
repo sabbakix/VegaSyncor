@@ -148,6 +148,11 @@ func Diagnose() []Check {
 			out = append(out, Check{CheckOK, t.cmd, ""})
 		}
 	}
+	if _, err := exec.LookPath("rclone"); err != nil {
+		out = append(out, Check{CheckWarn, "rclone", T("not installed: needed only to copy to OneDrive (apt install rclone)")})
+	} else {
+		out = append(out, Check{CheckOK, "rclone", ""})
+	}
 	if _, err := exec.LookPath("nft"); err != nil {
 		out = append(out, Check{CheckWarn, "nft", T("not installed: the firewall cannot be used (apt install nftables)")})
 	} else {

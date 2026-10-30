@@ -11,35 +11,72 @@ import (
 
 // ---------- job form ----------
 
+// connOptions lists the SMB connections.
 func connOptions(conns []api.ConnectionView) []option {
-	if len(conns) == 0 {
+	var out []option
+	for _, c := range conns {
+		if !c.IsOneDrive() {
+			out = append(out, option{c.ID, Tf("%s  (%s, user %s)", c.Name, c.Host, c.Username)})
+		}
+	}
+	if len(out) == 0 {
 		return []option{{"", T("(none – create one in the Connections tab)")}}
 	}
-	out := make([]option, len(conns))
-	for i, c := range conns {
-		out[i] = option{c.ID, Tf("%s  (%s, user %s)", c.Name, c.Host, c.Username)}
+	return out
+}
+
+// oneDriveOptions lists the OneDrive connections.
+func oneDriveOptions(conns []api.ConnectionView) []option {
+	var out []option
+	for _, c := range conns {
+		if c.IsOneDrive() {
+			out = append(out, option{c.ID, Tf("%s  (OneDrive %s, %s)", c.Name, driveTypeLabel(c.DriveType), c.Account)})
+		}
+	}
+	if len(out) == 0 {
+		return []option{{"", T("(none – add a OneDrive connection in the Connections tab)")}}
 	}
 	return out
+}
+
+func driveTypeLabel(t string) string {
+	switch t {
+	case "personal":
+		return "Personal"
+	case "business":
+		return "Business"
+	case "documentLibrary":
+		return "SharePoint"
+	}
+	return t
+}
+
+// firstConn returns the first SMB connection ("" if none).
+func firstConn(conns []api.ConnectionView) string {
+	for _, c := range conns {
+		if !c.IsOneDrive() {
+			return c.ID
+		}
+	}
+	return ""
 }
 
 // zone is the server time zone, shown next to the schedule.
 func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 	isNew := j == nil
 	if isNew {
-		first := ""
-		if len(conns) > 0 {
-			first = conns[0].ID
-		}
+		first := firstConn(conns)
 		j = &config.Job{
 			Enabled:  true,
 			Source:   config.Location{Type: config.LocSMB, ConnectionID: first},
 			SourceRO: true,
 			Dest:     config.Location{Type: config.LocLocal},
-			Mode:     config.ModeMirrorArchive, ArchiveDays: 30,
+			Mode:     config.ModeMirrorArchive, ArchiveDays: 30, EncryptNames: true,
 			Schedule: config.Schedule{Type: config.SchedWeekly, Times: []string{"22:00"}, Days: []int{1, 2, 3, 4, 5}, EveryMinutes: 60},
 		}
 	}
 	locTypes := []option{{config.LocSMB, T("Network folder (SMB)")}, {config.LocLocal, T("Local folder on this server")}}
+	dstTypes := append(append([]option{}, locTypes...), option{config.LocOneDrive, T("OneDrive (off-site copy)")})
 	var modes []option
 	for _, m := range config.Modes {
 		modes = append(modes, option{m, config.ModeLabel(m)})
@@ -49,6 +86,12 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		scheds = append(scheds, option{s, config.ScheduleTypeLabel(s)})
 	}
 	isSMB := func(k string) func(*form) bool { return func(f *form) bool { return f.choice(k) == config.LocSMB } }
+	isOD := func(f *form) bool { return f.choice("dst_type") == config.LocOneDrive }
+	encOn := func(f *form) bool { return isOD(f) && f.get("encrypt").Bool }
+	passHint := T("at least 8 characters")
+	if j.CryptPassEnc != "" {
+		passHint = T("unchanged (type a new one to change it)")
+	}
 	sched := func(types ...string) func(*form) bool {
 		return func(f *form) bool {
 			for _, t := range types {
@@ -77,8 +120,8 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 			return *l
 		}
 		c := j.Dest.ConnectionID
-		if c == "" && len(conns) > 0 {
-			c = conns[0].ID
+		if j.Dest.Type != config.LocSMB {
+			c = firstConn(conns)
 		}
 		return config.Location{ConnectionID: c}
 	}
@@ -117,20 +160,34 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 			withHelp(T("recommended: the source is mounted read-only, it cannot be changed or deleted")),
 
 		section(T("2. Destination – where to save the copy")),
-		newChoice("dst_type", T("Type"), locTypes, j.Dest.Type).withHelp(T("where to save the copy: a folder of this server (also a mounted USB disk or NAS) or a network folder")),
+		newChoice("dst_type", T("Type"), dstTypes, j.Dest.Type).withHelp(T("where to save the copy: a folder of this server (also a mounted USB disk or NAS), a network folder, or OneDrive for an off-site copy")),
 		newChoice("dst_conn", T("Connection"), connOptions(conns), j.Dest.ConnectionID).when(isSMB("dst_type")).
 			withHelp(T("PC, server or NAS to write the copy to")),
+		newChoice("dst_odconn", T("OneDrive account"), oneDriveOptions(conns), j.Dest.ConnectionID).when(isOD).
+			withHelp(T("OneDrive account to copy to (add it in the Connections tab)")),
 		newText("dst_share", T("Share"), j.Dest.Share, T("e.g. Backup")).browsable().when(isSMB("dst_type")).
 			withHelp(T("destination shared folder (Enter to list them)")),
 		newText("dst_path", T("Folder"), j.Dest.Path, T("empty = root of the share")).browsable().labeled(pathLabel("dst")).
-			withHelp(T("Enter to browse the folders")),
+			withHelp(T("Enter to browse the folders")).placeholder(func(f *form) string {
+			if isOD(f) {
+				return T("e.g. Backup/Accounting (empty = root of OneDrive)")
+			}
+			return T("empty = root of the share")
+		}),
+		newBool("encrypt", T("Encrypt files"), j.Encrypt).when(isOD).
+			withHelp(T("files are encrypted on this server before the upload: Microsoft cannot read them, but they can only be read back with VegaSyncor/rclone and the password")),
+		newBool("encrypt_names", T("Encrypt names too"), j.EncryptNames).when(encOn).
+			withHelp(T("also file and folder names are unreadable on OneDrive")),
+		newPassword("crypt_pass", T("Encryption password"), passHint).when(encOn).
+			withHelp(T("WITHOUT THIS PASSWORD THE COPY CANNOT BE READ: keep it somewhere safe (it is also in the configuration exports); changing it later uploads everything again")),
+		newPassword("crypt_pass2", T("Repeat password"), "").when(encOn).withHelp(T("type the same password again")),
 
 		section(T("3. Copy mode")),
 		newChoice("mode", T("Mode"), modes, j.Mode).helpFn(func(f *form) string { return config.ModeDescription(f.choice("mode")) }),
 		newText("archive_days", T("Keep archive (days)"), arch, T("empty = forever")).
 			when(func(f *form) bool { return f.choice("mode") == config.ModeMirrorArchive }).
 			withHelp(T("archived versions older than N days are deleted")),
-		newChoice("arc_type", T("Deleted items folder"), append([]option{{"", T("Default: inside the destination")}}, locTypes...), arc.Type).
+		newChoice("arc_type", T("Deleted items folder"), append([]option{{"", T("Default: inside the destination")}}, dstTypes...), arc.Type).
 			when(isArchive).helpFn(func(f *form) string {
 			if f.choice("arc_type") == "" {
 				return Tf("deleted and overwritten files go to %s/<date> in the destination", config.ArchiveDirName)
@@ -211,8 +268,11 @@ func schedSection(zone string) string {
 
 func pathLabel(prefix string) func(*form) string {
 	return func(f *form) string {
-		if f.choice(prefix+"_type") == config.LocSMB {
+		switch f.choice(prefix + "_type") {
+		case config.LocSMB:
 			return T("Subfolder")
+		case config.LocOneDrive:
+			return T("OneDrive folder")
 		}
 		return T("Folder (path)")
 	}
@@ -243,13 +303,29 @@ func jobFromForm(fm *form, id string) (config.Job, error) {
 	}
 	loc := func(p string) config.Location {
 		l := config.Location{Type: fm.choice(p + "_type"), Path: fm.val(p + "_path")}
-		if l.Type == config.LocSMB {
+		switch l.Type {
+		case config.LocSMB:
 			l.ConnectionID = fm.choice(p + "_conn")
 			l.Share = fm.val(p + "_share")
+		case config.LocOneDrive:
+			l.ConnectionID = fm.choice("dst_odconn") // the archive is on the same OneDrive
 		}
 		return l
 	}
 	j.Source, j.Dest = loc("src"), loc("dst")
+	if j.Dest.Type == config.LocOneDrive && fm.get("encrypt").Bool {
+		j.Encrypt, j.EncryptNames = true, fm.get("encrypt_names").Bool
+		pass := fm.get("crypt_pass").Input.Value()
+		if pass != "" {
+			if len([]rune(pass)) < 8 {
+				return j, errors.New(Tf("the password must be at least %d characters long", 8))
+			}
+			if pass != fm.get("crypt_pass2").Input.Value() {
+				return j, errors.New(T("the passwords do not match"))
+			}
+			j.CryptPassword = pass
+		}
+	}
 	if j.Mode == config.ModeMirrorArchive && fm.choice("arc_type") != "" {
 		a := loc("arc")
 		j.Archive = &a
@@ -322,24 +398,57 @@ func newConnForm(c *api.ConnectionView) *form {
 		pwPlace = T("(unchanged – leave empty to keep it)")
 		pwHelp = T("leave empty to keep the saved one; enter a value only to change it")
 	}
-	fm := &form{Title: title, Fields: []*field{
-		section(T("Server")),
+	kinds := []option{{"", T("Network folder (SMB)")}, {config.ConnOneDrive, T("OneDrive (off-site copy)")}}
+	if !isNew { // the type of an existing connection cannot change
+		for _, k := range kinds {
+			if k.Value == c.Kind {
+				kinds = []option{k}
+			}
+		}
+	}
+	smb := func(f *form) bool { return f.choice("kind") == "" }
+	od := func(f *form) bool { return f.choice("kind") == config.ConnOneDrive }
+	account := ""
+	if c.IsOneDrive() && c.DriveID != "" {
+		account = accountLabel(c.Account, c.DriveType)
+	}
+	signIn := newAction("od_account", T("Account"), account, T("[sign in]")).when(od).
+		withHelp(T("Enter to sign in to the Microsoft account (personal or work): you open a link in a browser on your PC or phone, and paste back the address it lands on"))
+	signIn.Input.Placeholder = T("not signed in")
+	fm := &form{Title: title, orig: &c.Connection, Fields: []*field{
+		section(T("Connection")),
+		newChoice("kind", T("Type"), kinds, c.Kind).
+			withHelp(T("a shared folder on the network (source or destination), or a OneDrive account for off-site copies (destination only)")),
 		newText("name", T("Name"), c.Name, T("e.g. Admin Office PC")).withHelp(T("descriptive name, used to choose the connection in the jobs")),
-		newText("host", T("Host / IP address"), c.Host, T("e.g. 192.168.1.20 or OFFICE-PC")).
+		section(T("Server")).when(smb),
+		newText("host", T("Host / IP address"), c.Host, T("e.g. 192.168.1.20 or OFFICE-PC")).when(smb).
 			withHelp(T("IP address or name of the PC/server; if the name is not found use the IP")),
-		newChoice("ver", T("SMB version"), smbVersions(), c.SMBVersion).
+		newChoice("ver", T("SMB version"), smbVersions(), c.SMBVersion).when(smb).
 			withHelp(T("leave it automatic unless there are connection errors")),
-		section(T("Credentials")),
-		newText("domain", T("Domain / workgroup"), c.Domain, T("optional, e.g. COMPANY or WORKGROUP")).
+		section(T("Credentials")).when(smb),
+		newText("domain", T("Domain / workgroup"), c.Domain, T("optional, e.g. COMPANY or WORKGROUP")).when(smb).
 			withHelp(T("Windows domain of the user; leave empty for a local user of the PC")),
-		newText("user", T("User"), c.Username, T("e.g. backup")).withHelp(T("user allowed to read the share (and write, if used as destination)")),
-		newPassword("password", T("Password"), pwPlace).withHelp(pwHelp),
+		newText("user", T("User"), c.Username, T("e.g. backup")).when(smb).withHelp(T("user allowed to read the share (and write, if used as destination)")),
+		newPassword("password", T("Password"), pwPlace).when(smb).withHelp(pwHelp),
+		section(T("OneDrive")).when(od),
+		signIn,
 	}}
 	fm.init()
 	return fm
 }
 
-func connFromForm(fm *form, id string) api.ConnectionInput {
+// connFromForm builds the connection; acc is the result of a sign-in made in
+// the form (nil: keep the account of the connection being edited).
+func connFromForm(fm *form, id string, acc *api.OneDriveAccount) api.ConnectionInput {
+	if fm.choice("kind") == config.ConnOneDrive {
+		in := api.ConnectionInput{Connection: config.Connection{ID: id, Name: fm.val("name"), Kind: config.ConnOneDrive}}
+		if acc != nil {
+			in.Account, in.DriveID, in.DriveType, in.Token = acc.Account, acc.DriveID, acc.DriveType, acc.Token
+		} else if orig := fm.orig; orig != nil {
+			in.Account, in.DriveID, in.DriveType = orig.Account, orig.DriveID, orig.DriveType
+		}
+		return in
+	}
 	return api.ConnectionInput{
 		Connection: config.Connection{
 			ID: id, Name: fm.val("name"), Host: fm.val("host"), SMBVersion: fm.choice("ver"),

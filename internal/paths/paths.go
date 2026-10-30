@@ -39,3 +39,7 @@ func DevMode() bool { return os.Getenv("VEGASYNCOR_DEV") == "1" }
 // DevSMBRoot, in development mode, is the folder simulating the SMB servers:
 // \\HOST\SHARE maps to <DevSMBRoot>/HOST/SHARE.
 func DevSMBRoot() string { return os.Getenv("VEGASYNCOR_DEV_SMB_ROOT") }
+
+// DevOneDriveRoot, in development mode, is the folder simulating the OneDrive
+// accounts (one subfolder per drive); the sign-in is simulated too.
+func DevOneDriveRoot() string { return os.Getenv("VEGASYNCOR_DEV_ONEDRIVE_ROOT") }

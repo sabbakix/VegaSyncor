@@ -110,3 +110,43 @@ func TestFirewallKeptWhenActive(t *testing.T) {
 		t.Errorf("active firewall of this server not kept: %+v %+v", res, next.Firewall)
 	}
 }
+
+// A OneDrive connection (its token) and the encryption password of a job move
+// to the new server and are encrypted again with its master key.
+func TestOneDriveRoundTrip(t *testing.T) {
+	oldBox, newBox := box(t), box(t)
+	cfg := sample(t, oldBox)
+	tok := `{"access_token":"A","refresh_token":"R"}`
+	tokEnc, _ := oldBox.Encrypt(tok, "od1")
+	cfg.Connections = append(cfg.Connections, config.Connection{ID: "od1", Name: "Off-site", Kind: config.ConnOneDrive,
+		Account: "Stefy", DriveID: "b!x", DriveType: "business", PasswordEnc: tokEnc})
+	passEnc, _ := oldBox.Encrypt("crypt pass", config.CryptAAD("j2"))
+	cfg.Jobs = append(cfg.Jobs, config.Job{ID: "j2", Name: "Off-site copy", Enabled: true,
+		Source: config.Location{Type: "smb", ConnectionID: "c1", Share: "Docs"}, SourceRO: true,
+		Dest: config.Location{Type: config.LocOneDrive, ConnectionID: "od1", Path: "Backup"}, Mode: config.ModeMirrorArchive,
+		Encrypt: true, EncryptNames: true, CryptPassEnc: passEnc, Schedule: config.Schedule{Type: config.SchedManual}})
+
+	p, err := BuildPayload(cfg, oldBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Jobs[1].CryptPassEnc != passEnc {
+		t.Error("BuildPayload changed the configuration in use")
+	}
+	file, _ := Encrypt(p, "correct horse battery", "old", "test")
+	got, _, err := Decrypt(file, "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _, err := BuildConfig(got, &config.Config{}, newBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk, err := newBox.Decrypt(next.Connection("od1").PasswordEnc, "od1"); err != nil || tk != tok {
+		t.Errorf("token after import = %q, %v", tk, err)
+	}
+	j := next.Job("j2")
+	if pw, err := newBox.Decrypt(j.CryptPassEnc, config.CryptAAD("j2")); err != nil || pw != "crypt pass" || j.CryptPassword != "" {
+		t.Errorf("crypt password after import = %q, %v (clear %q)", pw, err, j.CryptPassword)
+	}
+}

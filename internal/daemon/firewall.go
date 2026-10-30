@@ -63,6 +63,9 @@ func (d *Daemon) smbHosts(force bool) []string {
 	var hosts []string
 	labels := map[string]string{}
 	for _, c := range d.cfg.Connections {
+		if c.IsOneDrive() {
+			continue
+		}
 		hosts = append(hosts, c.Host)
 		if labels[c.Host] == "" {
 			labels[c.Host] = c.Name
@@ -120,13 +123,25 @@ func (d *Daemon) smbHosts(force bool) []string {
 	return out
 }
 
+// usesCloud reports whether there are OneDrive connections (they need HTTPS).
+func (d *Daemon) usesCloud() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	for _, c := range d.cfg.Connections {
+		if c.IsOneDrive() {
+			return true
+		}
+	}
+	return false
+}
+
 // --- applying ---
 
 func (d *Daemon) fwScript(f config.Firewall, forceResolve bool) string {
 	if !f.Enabled {
 		return firewall.DisableScript()
 	}
-	return firewall.Script(firewall.Plan(f, d.smbHosts(forceResolve)))
+	return firewall.Script(firewall.Plan(f, d.smbHosts(forceResolve), d.usesCloud()))
 }
 
 // fwApplyLocked loads a script; requires d.fw.mu.
@@ -222,7 +237,7 @@ func (d *Daemon) firewallStatus() api.FirewallStatus {
 	d.fw.mu.Unlock()
 
 	if st.Settings.Enabled {
-		st.Rules = firewall.Plan(st.Settings, smb)
+		st.Rules = firewall.Plan(st.Settings, smb, d.usesCloud())
 	}
 	if st.Available {
 		counters, exists, err := firewall.Counters(d.fw.runner)

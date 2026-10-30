@@ -40,6 +40,8 @@ the clock (or the `L` key).
   with automatic rollback if a change is not confirmed.
 - **Export / import** of the whole configuration (connections with their passwords, syncs,
   settings) as a password-protected encrypted file, to move the service to a new server.
+- **Off-site copy to OneDrive** (Personal or Microsoft 365 / Business) as destination, with the same
+  modes, archive, dry run and logs, and optional **client-side encryption**.
 
 ## Screenshots
 
@@ -87,7 +89,8 @@ curl -fsSL https://github.com/sabbakix/VegaSyncor/releases/latest/download/vegas
 ```
 
 The script detects the architecture (amd64/arm64), downloads the `.deb` package from the latest
-release, verifies its checksum, installs the dependencies (`rsync`, `cifs-utils`, `smbclient`) and
+release, verifies its checksum, installs the dependencies (`rsync`, `cifs-utils`, `smbclient`,
+`nftables`, `rclone`) and
 starts the `vegasyncor` service. Run it again to update.
 
 ### With the .deb package
@@ -198,7 +201,7 @@ Press `e` to enable the **lockdown**:
 - incoming: only **SSH from the admin hosts** (IP addresses or networks; empty = any host) and
   replies to connections started by the server; optionally ping;
 - outgoing: **SMB only to the hosts of the connections**, plus DNS, NTP, DHCP and, optionally, web
-  (HTTP/HTTPS) for updates;
+  (HTTP/HTTPS) for updates; with OneDrive connections also HTTPS (port 443) to any host;
 - everything else is blocked and logged (`journalctl -k | grep vegasyncor`).
 
 On a port or a connection, `enter` (or `a`) creates an allow/block rule pre-filled from it; your rules
@@ -222,6 +225,39 @@ rules, so they win.
 
 Requires `nftables` (installed by the installer; `vegasyncor check` reports it). In LXC containers
 the container must allow nftables (privileged containers usually do).
+
+## Off-site copy to OneDrive
+
+Besides network shares and local folders, a sync can copy to **OneDrive** (personal Microsoft
+account or work account of Microsoft 365), e.g. as the off-site copy of a share already backed up
+on the local NAS. OneDrive is a destination only. The copy is made by
+[rclone](https://rclone.org) (installed with VegaSyncor, at least version 1.53; Debian 12 and Ubuntu
+24.04 ship 1.60).
+
+1. Tab **2 Connections**, `n`, *Type*: **OneDrive**. On *Account* press `Enter` (*sign in*): the TUI
+   shows a Microsoft address. Open it in a browser on your PC or phone (select it with Shift +
+   mouse, or `ctrl+k` copies it to your PC's clipboard in terminals that support it), sign in and
+   accept. The browser then lands on an address starting with `http://localhost:53682/?code=` and
+   shows an error page: that is expected. Copy that whole address, paste it in the TUI and press
+   `Enter`, then save the connection with `ctrl+s`. `t` shows the free space.
+2. Tab **1 Syncs**, `n`: in *Destination* choose *OneDrive (off-site copy)*, the account and the
+   folder (`Enter` browses OneDrive and can create folders).
+
+- **Modes, archive, dry run, logs, filters** work as for the other destinations. Deleted and
+  overwritten files go to `.vegasyncor-archive/<date>` in the OneDrive folder (or to another folder
+  of the same OneDrive). Moved files appear as deleted + new: OneDrive receives them again.
+- **Encryption** (*Encrypt files*, optional): files are encrypted on the server before the upload
+  (rclone *crypt*, with the names too if chosen). Microsoft cannot read them; they are not readable
+  in the OneDrive web/app either. **Without the password the copy is lost**: keep it safe (it is
+  also included in the configuration exports). To read the files without VegaSyncor use rclone
+  with a *crypt* remote and the same password. With encryption *Compare contents* is not
+  available and the deleted items stay in the archive folder of the destination.
+- **Sign-in**: the token is stored encrypted like the passwords and refreshed automatically by
+  every copy. Microsoft revokes it after about 90 days without use, or when the account password
+  changes: then edit the connection and sign in again. The sign-in uses rclone's public app ID; no
+  setup in Azure / Entra ID is needed.
+- **Firewall**: with OneDrive connections the lockdown also allows outgoing HTTPS (port 443), to any
+  host because Microsoft's addresses change.
 
 ## Moving to a new server (export / import)
 
@@ -366,6 +402,9 @@ export VEGASYNCOR_DEV=1 VEGASYNCOR_CONFIG_DIR=/tmp/vs/etc VEGASYNCOR_STATE_DIR=/
 
 SMB shares are simulated with local folders: `\\HOST\SHARE` maps to
 `$VEGASYNCOR_DEV_SMB_ROOT/HOST/SHARE` (e.g. `mkdir -p /tmp/vs/smb/OFFICE-PC/Documents`).
+With `VEGASYNCOR_DEV_ONEDRIVE_ROOT=/tmp/vs/onedrive` OneDrive is simulated too (sign-in included:
+paste any address containing `code=`), with rclone copying to local folders. The rclone tests use
+`VEGASYNCOR_TEST_RCLONE=/path/to/rclone go test ./internal/cloud` (skipped without rclone).
 
 The firewall rules can be loaded into a real kernel in a throw-away user+network namespace (no
 effect on the machine): `VEGASYNCOR_TEST_NFT=nft go test ./internal/firewall`.
@@ -392,4 +431,5 @@ its table.
 | `internal/transfer` | encrypted export files (Argon2id + AES-256-GCM), import into a new server |
 | `internal/mount` | CIFS mounts / read-only binds, share listing, environment checks |
 | `internal/syncer` | rsync execution, progress, archive |
+| `internal/cloud` | OneDrive with rclone: sign-in, sync, encryption, browsing |
 | `internal/firewall` | nftables rules (lockdown preset), counters, open ports and connections (`ss`) |
