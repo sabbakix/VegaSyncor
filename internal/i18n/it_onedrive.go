@@ -59,7 +59,7 @@ func init() {
 		"[sign in]": "[accedi]",
 		"Enter to sign in to the Microsoft account (personal or work): you open a link in a browser on your PC or phone, and paste back the address it lands on": "Invio per accedere all'account Microsoft (personale o di lavoro): apri un link in un browser sul PC o sul telefono e incolla qui l'indirizzo su cui arriva",
 		"not signed in": "accesso non effettuato",
-		"a shared folder on the network (source or destination), or a OneDrive account for off-site copies (destination only)": "una cartella condivisa in rete (sorgente o destinazione), oppure un account OneDrive per copie fuori sede (solo destinazione)",
+		"a shared folder on the network (source or destination), or a OneDrive account for off-site copies (and to restore them)": "una cartella condivisa in rete (sorgente o destinazione), oppure un account OneDrive per copie fuori sede (e per ripristinarle)",
 		"OneDrive": "OneDrive",
 		"sign in to OneDrive first (Enter on the account)": "accedi prima a OneDrive (Invio sull'account)",
 		"signed in":     "accesso fatto",

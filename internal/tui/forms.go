@@ -444,7 +444,7 @@ func newConnForm(c *api.ConnectionView) *form {
 	fm := &form{Title: title, orig: &c.Connection, Fields: []*field{
 		section(T("Connection")),
 		newChoice("kind", T("Type"), kinds, c.Kind).
-			withHelp(T("a shared folder on the network (source or destination), or a OneDrive account for off-site copies (destination only)")),
+			withHelp(T("a shared folder on the network (source or destination), or a OneDrive account for off-site copies (and to restore them)")),
 		newText("name", T("Name"), c.Name, T("e.g. Admin Office PC")).withHelp(T("descriptive name, used to choose the connection in the jobs")),
 		section(T("Server")).when(smb),
 		newText("host", T("Host / IP address"), c.Host, T("e.g. 192.168.1.20 or OFFICE-PC")).when(smb).

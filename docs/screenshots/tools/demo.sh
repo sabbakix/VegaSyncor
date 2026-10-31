@@ -34,7 +34,7 @@ mkdir -p "$R/SAMBA-SRV/home/mario" "$R/NAS-BACKUP/Backup" "$R/NAS-BACKUP/Archive
 mkdir -p "$DEMO/onedrive/dev-drive/"{Documents,Pictures,"VegaSyncor/Engineering"}
 
 tmux new-session -d -s d "bash -c '. $DEMO/env.sh; ./bin/vegasyncor daemon 2>$DEMO/daemon.log'"
-sleep 1
+for _ in $(seq 1 50); do curl -s --unix-socket "$VEGASYNCOR_SOCKET" http://x/api/status >/dev/null && break; sleep 0.2; done
 api() { curl -s --unix-socket "$VEGASYNCOR_SOCKET" -X "$1" "http://x$2" -d "$3"; }
 id() { python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id") or d)'; }
 C1=$(api POST /api/connections '{"name":"Admin office PC","host":"ADMIN-PC","domain":"COMPANY","username":"backup","password":"x1!Demo"}' | id)
