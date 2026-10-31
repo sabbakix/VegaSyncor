@@ -36,3 +36,7 @@ L=$SHOTS_DIR/libs/root/usr/lib/x86_64-linux-gnu
 LD_LIBRARY_PATH=$L:$L/nss $SHOTS_DIR/venv/bin/python docs/screenshots/tools/video/render.py \
   $SHOTS_DIR/out/video/timeline.json OUT.mp4 $SHOTS_DIR/out/video/voice/voice.json
 ```
+
+Background music: `video/music.py IN.mp4 OUT.mp4 MUSIC...` mixes the pieces (crossfaded) 20 dB under the
+voice. The videos use J.S. Bach, *Goldberg Variations* – Aria and Aria da capo, played by Kimiko Ishizaka
+(*Open Goldberg Variations*, CC0, from Wikimedia Commons).
