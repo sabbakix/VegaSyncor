@@ -38,5 +38,6 @@ LD_LIBRARY_PATH=$L:$L/nss $SHOTS_DIR/venv/bin/python docs/screenshots/tools/vide
 ```
 
 Background music: `video/music.py IN.mp4 OUT.mp4 MUSIC...` mixes the pieces (crossfaded) 20 dB under the
-voice. The videos use J.S. Bach, *Goldberg Variations* – Aria and Aria da capo, played by Kimiko Ishizaka
+voice (`--gain DB` to change it; `hum` instead of the pieces generates a soft low drone, used at
+`--gain -26` for the female version). The male version uses J.S. Bach, *Goldberg Variations* – Aria and Aria da capo, played by Kimiko Ishizaka
 (*Open Goldberg Variations*, CC0, from Wikimedia Commons).
