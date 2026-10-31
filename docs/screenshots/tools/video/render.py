@@ -1,9 +1,12 @@
 """Renders the timeline written by record.py to frames (headless Chromium) and
-encodes them to MP4 (ffmpeg from imageio-ffmpeg).
-    render.py TIMELINE.json OUT.mp4"""
+encodes them to MP4 (ffmpeg from imageio-ffmpeg), with the voice-over of voice.py
+if given.
+    render.py TIMELINE.json OUT.mp4 [VOICE.json]"""
+import array, wave
 import base64, hashlib, html, json, pathlib, re, subprocess, sys
 import imageio_ffmpeg
 from playwright.sync_api import sync_playwright
+from narration import LEAD, TAIL, seg_key
 
 tl = json.loads(pathlib.Path(sys.argv[1]).read_text())
 OUTFILE = pathlib.Path(sys.argv[2]).resolve()
@@ -259,7 +262,51 @@ def with_keys(frames):
         since += f["dur"]
 
 
+def retime(frames, voice):
+    """lengthens each segment (frames with the same caption or slide) whose voice-over
+    is longer than it, holding its last frame; returns the start time of each voice line."""
+    starts, i = [], 0
+    t, done = 0.0, set()
+    while i < len(frames):
+        key = seg_key(frames[i])
+        j = i
+        while j < len(frames) and seg_key(frames[j]) == key:
+            j += 1
+        length = sum(f["dur"] for f in frames[i:j])
+        if key in voice and key not in done:
+            done.add(key)
+            need = LEAD + voice[key]["dur"] + TAIL
+            if need > length:
+                frames[j - 1]["dur"] += need - length
+                length = need
+            starts.append((t + LEAD, voice[key]["wav"]))
+        t += length
+        i = j
+    return starts
+
+
+def mix(starts, total, out):
+    """places the voice lines on a silent track (16-bit mono WAV)."""
+    rate, track = None, None
+    for start, path in starts:
+        with wave.open(path) as w:
+            if track is None:
+                rate = w.getframerate()
+                track = array.array("h", bytes(2 * int((total + 1) * rate)))
+            data = array.array("h", w.readframes(w.getnframes()))
+        a = int(start * rate)
+        track[a:a + len(data)] = data
+    with wave.open(str(out), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(track.tobytes())
+
+
 def main():
+    starts = []
+    if len(sys.argv) > 3:
+        starts = retime(tl["frames"], json.loads(pathlib.Path(sys.argv[3]).read_text()))
     cache, seq = {}, []
     with sync_playwright() as p:
         b = p.chromium.launch()
@@ -284,10 +331,15 @@ def main():
         for png, d in seq:
             o.write(f"file '{png}'\nduration {d:.3f}\n")
         o.write(f"file '{seq[-1][0]}'\n")
-    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
-                    "-i", str(lst), "-vf", "fps=30,format=yuv420p", "-c:v", "libx264", "-preset", "slow",
-                    "-tune", "stillimage", "-crf", "18", "-movflags", "+faststart", str(OUTFILE)], check=True)
     total = sum(d for _, d in seq)
+    audio = []
+    if starts:
+        mix(starts, total, WORK / "voice.wav")
+        audio = ["-i", str(WORK / "voice.wav"), "-af", "loudnorm=I=-16:TP=-1.5", "-ar", "48000",
+                 "-c:a", "aac", "-b:a", "160k", "-shortest"]
+    subprocess.run([imageio_ffmpeg.get_ffmpeg_exe(), "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
+                    "-i", str(lst), *audio, "-vf", "fps=30,format=yuv420p", "-c:v", "libx264", "-preset", "slow",
+                    "-tune", "stillimage", "-crf", "18", "-movflags", "+faststart", str(OUTFILE)], check=True)
     print(f"{OUTFILE}: {len(cache)} images, {int(total // 60)}:{int(total % 60):02d}")
 
 
