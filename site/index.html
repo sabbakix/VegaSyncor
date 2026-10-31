@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VegaSyncor — Network folder backup for Linux</title>
+  <meta name="description" content="VegaSyncor is a Linux service that periodically syncs SMB/CIFS network folders to a backup server, with a read-only source enforced by the kernel, encrypted credentials, dry runs and off-site copies to OneDrive.">
+  <meta property="og:title" content="VegaSyncor — Network folder backup for Linux">
+  <meta property="og:description" content="Periodic, safe backups of Windows and Samba shares, managed from a terminal UI that works over SSH.">
+  <meta property="og:type" content="website">
+  <meta property="og:image" content="screenshots/01-dashboard.png">
+  <meta name="theme-color" content="#1b2130">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231b2130'/%3E%3Cpath d='M8 10l8 13 8-13' fill='none' stroke='%2322d3ee' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="#top" aria-label="VegaSyncor home">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7"/><path d="M8 10l8 13 8-13"/></svg>
+      VegaSyncor
+    </a>
+    <nav class="nav-links" aria-label="Main">
+      <a href="#features">Features</a>
+      <a href="#tour">Tour</a>
+      <a href="#offsite">OneDrive</a>
+      <a href="#install">Install</a>
+      <a class="btn btn-ghost btn-sm" href="https://github.com/sabbakix/VegaSyncor">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        GitHub
+      </a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="wrap">
+      <a class="pill" href="https://github.com/sabbakix/VegaSyncor/releases/latest">
+        <span class="dot"></span> Latest release <strong id="version">v0.7.1</strong> · Debian &amp; Ubuntu
+      </a>
+      <h1>Network folder backups<br><span class="accent">that can't touch the source.</span></h1>
+      <p class="lead">
+        VegaSyncor is a Linux service that periodically syncs SMB/CIFS shares (Windows PCs and servers, or Samba)
+        to a backup server and off-site to OneDrive. You manage it from a fast terminal interface that works over SSH.
+      </p>
+
+      <div class="install-box" role="group" aria-label="Quick install command">
+        <code id="install-cmd">curl -fsSL https://github.com/sabbakix/VegaSyncor/releases/latest/download/vegasyncor-install.sh | sudo sh</code>
+        <button class="copy" data-copy="install-cmd" type="button">Copy</button>
+      </div>
+
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="#install">Get started</a>
+        <a class="btn btn-ghost" href="#tour">Take the tour</a>
+      </div>
+
+      <figure class="hero-shot">
+        <img src="screenshots/01-dashboard.png" width="2064" height="1240"
+             alt="VegaSyncor dashboard: list of syncs with status, schedule and progress of the running copy">
+      </figure>
+    </div>
+  </section>
+
+  <!-- Safety pillars -->
+  <section class="section" id="safety">
+    <div class="wrap">
+      <p class="eyebrow">Built for safety first</p>
+      <h2>A backup tool should never be the thing that loses your data.</h2>
+      <div class="pillars">
+        <article class="pillar">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>
+          </div>
+          <h3>Kernel-enforced read-only source</h3>
+          <p>Source shares are mounted with <code>mount.cifs -o ro</code>. No configuration mistake can change or delete a file on the source.</p>
+        </article>
+        <article class="pillar">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+          </div>
+          <h3>Empty-source protection</h3>
+          <p>If a source turns up empty, after a failed mount or an emptied share, the mirror is blocked so the backup is never wiped.</p>
+        </article>
+        <article class="pillar">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg>
+          </div>
+          <h3>Encrypted credentials</h3>
+          <p>Passwords are stored with AES-256-GCM and never appear in processes, logs or the interface.</p>
+        </article>
+        <article class="pillar">
+          <div class="icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <h3>Dry run before anything</h3>
+          <p>See exactly what would be copied, updated or deleted before a job ever runs for real.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features -->
+  <section class="section alt" id="features">
+    <div class="wrap">
+      <p class="eyebrow">Features</p>
+      <h2>Everything a small-office backup server needs</h2>
+      <div class="features">
+        <div class="feature">
+          <h3>Three copy modes</h3>
+          <p><strong>Mirror + archive</strong> keeps deleted and overwritten files for N days. <strong>Mirror</strong> makes an exact copy. <strong>Add only</strong> never deletes anything.</p>
+        </div>
+        <div class="feature">
+          <h3>Flexible scheduling</h3>
+          <p>Run at intervals within a time window, at set times, on chosen weekdays, from a cron expression or manually. The server clock is always on screen.</p>
+        </div>
+        <div class="feature">
+          <h3>Incremental with rsync</h3>
+          <p>Only the differences are copied. Set bandwidth limits and exclusions, and turn on checksum comparison for critical folders.</p>
+        </div>
+        <div class="feature">
+          <h3>Any destination</h3>
+          <p>A local disk, a USB drive, a mounted NAS, another SMB share or OneDrive, optionally encrypted on the client.</p>
+        </div>
+        <div class="feature">
+          <h3>Built-in firewall</h3>
+          <p>Lock the server down to SSH from admin hosts and SMB to the backed-up hosts. Changes roll back automatically if they aren't confirmed.</p>
+        </div>
+        <div class="feature">
+          <h3>Export &amp; import</h3>
+          <p>Move the whole configuration, passwords included, to a new server in one file protected with Argon2id and AES-256-GCM.</p>
+        </div>
+        <div class="feature">
+          <h3>History &amp; detailed logs</h3>
+          <p>Every run is recorded. Filter logs to show new, updated, deleted or moved files, and search them as you type.</p>
+        </div>
+        <div class="feature">
+          <h3>Keyboard &amp; mouse TUI</h3>
+          <p>Every tab, field and command can be clicked. It works over SSH, in true colour, in English and Italian.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Tour -->
+  <section class="section" id="tour">
+    <div class="wrap">
+      <p class="eyebrow">Product tour</p>
+      <h2>See it in action</h2>
+      <div class="tabs" role="tablist" aria-label="Screenshots">
+        <button role="tab" aria-selected="true" data-shot="0">Dashboard</button>
+        <button role="tab" aria-selected="false" data-shot="1">Edit a sync</button>
+        <button role="tab" aria-selected="false" data-shot="2">Browse folders</button>
+        <button role="tab" aria-selected="false" data-shot="3">Dry run</button>
+        <button role="tab" aria-selected="false" data-shot="4">Connections</button>
+        <button role="tab" aria-selected="false" data-shot="5">History</button>
+        <button role="tab" aria-selected="false" data-shot="6">Firewall</button>
+        <button role="tab" aria-selected="false" data-shot="7">Export</button>
+      </div>
+      <div class="tour">
+        <div class="tour-text">
+          <h3 id="tour-title">Dashboard</h3>
+          <p id="tour-desc"></p>
+        </div>
+        <button class="tour-shot" type="button" id="tour-open" aria-label="Enlarge screenshot">
+          <img id="tour-img" src="screenshots/01-dashboard.png" alt="" loading="lazy">
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="section alt" id="how">
+    <div class="wrap">
+      <p class="eyebrow">How it works</p>
+      <h2>Your first backup in three steps</h2>
+      <ol class="steps">
+        <li>
+          <span class="num">1</span>
+          <h3>Add a connection</h3>
+          <p>Enter the PC or server address and its credentials. Press <kbd>t</kbd> to test access and list the available shares.</p>
+        </li>
+        <li>
+          <span class="num">2</span>
+          <h3>Create a sync</h3>
+          <p>Pick the share and folder, a destination, a mode and a schedule. A summary box always shows <em>source → destination</em>.</p>
+        </li>
+        <li>
+          <span class="num">3</span>
+          <h3>Dry run, then relax</h3>
+          <p>Press <kbd>s</kbd> for a dry run and <kbd>l</kbd> to review the files. Then let the scheduler take over.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Off-site -->
+  <section class="section" id="offsite">
+    <div class="wrap split">
+      <div>
+        <p class="eyebrow">Off-site copy</p>
+        <h2>Send a second copy to OneDrive, encrypted before it leaves</h2>
+        <p>OneDrive Personal and Microsoft 365 / Business work as a destination with the same modes, archive, dry run and logs. You can also use OneDrive as a <strong>source</strong> to restore or check an off-site copy.</p>
+        <ul class="checks">
+          <li>Sign in from the TUI. No Azure or Entra ID setup needed</li>
+          <li>Optional client-side encryption of file contents and names</li>
+          <li>Restores keep empty-source protection and never change the OneDrive side</li>
+          <li>The sign-in token is stored encrypted and refreshed automatically</li>
+        </ul>
+      </div>
+      <button class="tour-shot" type="button" data-zoom="screenshots/10-onedrive-job.png" aria-label="Enlarge OneDrive screenshot">
+        <img src="screenshots/10-onedrive-job.png" width="2064" height="1870" loading="lazy"
+             alt="Job copying a network share to OneDrive with encryption">
+      </button>
+    </div>
+  </section>
+
+  <!-- Install -->
+  <section class="section alt" id="install">
+    <div class="wrap">
+      <p class="eyebrow">Install</p>
+      <h2>Up and running in a minute</h2>
+      <div class="install-grid">
+        <div class="card">
+          <h3>Quick install</h3>
+          <p>This detects amd64 or arm64, verifies the package checksum, installs dependencies and starts the service. Run it again to update.</p>
+          <pre><code id="cmd-quick">curl -fsSL https://github.com/sabbakix/VegaSyncor/releases/latest/download/vegasyncor-install.sh | sudo sh</code><button class="copy" data-copy="cmd-quick" type="button">Copy</button></pre>
+          <h3>With the .deb package</h3>
+          <pre><code id="cmd-deb">sudo apt install ./vegasyncor_&lt;version&gt;_amd64.deb</code><button class="copy" data-copy="cmd-deb" type="button">Copy</button></pre>
+          <h3>From source <span class="muted">(Go ≥ 1.26)</span></h3>
+          <pre><code id="cmd-src">make build &amp;&amp; sudo ./install.sh</code><button class="copy" data-copy="cmd-src" type="button">Copy</button></pre>
+          <p class="note"><strong>After installing,</strong> back up <code>/etc/vegasyncor/master.key</code> somewhere safe. Without it, saved passwords can't be decrypted.</p>
+        </div>
+        <div class="card terminal">
+          <div class="term-bar"><i></i><i></i><i></i><span>bash</span></div>
+<pre class="term"><span class="c"># open the interface</span>
+<span class="p">$</span> sudo vegasyncor
+
+<span class="c"># short status of the jobs</span>
+<span class="p">$</span> sudo vegasyncor status
+
+<span class="c"># check the system can mount SMB shares</span>
+<span class="p">$</span> sudo vegasyncor check
+
+<span class="c"># run a job now, or preview it</span>
+<span class="p">$</span> sudo vegasyncor run "Accounting"
+<span class="p">$</span> sudo vegasyncor dry-run "Accounting"
+
+<span class="c"># move to a new server</span>
+<span class="p">$</span> sudo vegasyncor export
+<span class="p">$</span> sudo vegasyncor import FILE.vsconf
+
+<span class="c"># service log</span>
+<span class="p">$</span> journalctl -u vegasyncor -f</pre>
+        </div>
+      </div>
+      <p class="req">Runs on Debian and Ubuntu (amd64, arm64), on bare metal, VMs, privileged LXC containers (Proxmox) or Docker with <code>--privileged</code>.</p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="section cta">
+    <div class="wrap">
+      <h2>Protect your shares today</h2>
+      <p>VegaSyncor is open source on GitHub. Read the full documentation, open an issue or download the latest release.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://github.com/sabbakix/VegaSyncor/releases/latest">Download latest release</a>
+        <a class="btn btn-ghost" href="https://github.com/sabbakix/VegaSyncor#readme">Read the docs</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <span>© <span id="year">2026</span> VegaSyncor</span>
+    <nav aria-label="Footer">
+      <a href="https://github.com/sabbakix/VegaSyncor">GitHub</a>
+      <a href="https://github.com/sabbakix/VegaSyncor/releases">Releases</a>
+      <a href="https://github.com/sabbakix/VegaSyncor/issues">Issues</a>
+    </nav>
+  </div>
+</footer>
+
+<dialog id="lightbox" aria-label="Screenshot">
+  <button type="button" class="lb-close" aria-label="Close">×</button>
+  <img id="lb-img" src="" alt="">
+</dialog>
+
+<script>
+  const shots = [
+    ["01-dashboard", "Dashboard", "Every sync at a glance: status, source → destination, schedule, last and next run, plus live progress of the running copy with speed and ETA."],
+    ["02-edit-job", "Edit a sync", "The box at the top always summarises source → destination with the read-only indicator. The bottom bar explains the active field, and changed fields are marked until you save."],
+    ["03-browse-folders", "Browse folders", "Browse shares and subfolders directly on the remote PC or server, and create a new destination folder on the spot."],
+    ["05-dry-run", "Dry run", "Before enabling a job, see exactly which files would be copied, updated or deleted, without touching anything."],
+    ["04-connections", "Connections", "Saved credentials and OneDrive accounts, encrypted at rest and reusable across jobs."],
+    ["06-history", "History", "The outcome of every run, with the detailed log. Filter by new, updated, deleted or moved files, and search as you type."],
+    ["07-firewall", "Firewall", "Open ports with their process and reachability, active connections and the rules applied, with packet counters."],
+    ["08-export", "Export", "The whole configuration, passwords included, in one encrypted file, ready to move the service to a new server."]
+  ];
+  const tabs = document.querySelectorAll('.tabs [role=tab]');
+  const img = document.getElementById('tour-img');
+  const show = i => {
+    const [file, title, desc] = shots[i];
+    img.src = `screenshots/${file}.png`;
+    img.alt = `${title}: ${desc}`;
+    document.getElementById('tour-title').textContent = title;
+    document.getElementById('tour-desc').textContent = desc;
+    tabs.forEach((t, j) => t.setAttribute('aria-selected', String(j === i)));
+  };
+  tabs.forEach(t => t.addEventListener('click', () => show(+t.dataset.shot)));
+  show(0);
+
+  const lb = document.getElementById('lightbox');
+  const lbImg = document.getElementById('lb-img');
+  const zoom = (src, alt) => { lbImg.src = src; lbImg.alt = alt || ''; lb.showModal(); };
+  document.getElementById('tour-open').addEventListener('click', () => zoom(img.src, img.alt));
+  document.querySelectorAll('[data-zoom]').forEach(b =>
+    b.addEventListener('click', () => zoom(b.dataset.zoom, b.querySelector('img').alt)));
+  document.querySelector('.hero-shot img').addEventListener('click', e => zoom(e.target.src, e.target.alt));
+  lb.addEventListener('click', () => lb.close());
+
+  document.querySelectorAll('.copy').forEach(b => b.addEventListener('click', async () => {
+    const text = document.getElementById(b.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(text); b.textContent = 'Copied'; }
+    catch { b.textContent = 'Select & copy'; }
+    setTimeout(() => (b.textContent = 'Copy'), 1600);
+  }));
+
+  document.getElementById('year').textContent = new Date().getFullYear();
+
+  fetch('https://api.github.com/repos/sabbakix/VegaSyncor/releases/latest')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.tag_name) document.getElementById('version').textContent = d.tag_name; })
+    .catch(() => {});
+</script>
+</body>
+</html>
