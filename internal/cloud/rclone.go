@@ -1,10 +1,11 @@
-// Package cloud copies to OneDrive with rclone.
+// Package cloud copies to OneDrive and S3 with rclone.
 //
-// The OneDrive sign-in token is kept encrypted in the VegaSyncor configuration:
-// for every operation a temporary rclone configuration file (0600, in the runtime
-// folder) is written with the token, and removed afterwards. rclone refreshes the
-// token when it expires and writes it back to that file: Token reads it so that
-// the service can store the new one.
+// The credentials (the OneDrive sign-in token, the S3 keys) are kept encrypted in
+// the VegaSyncor configuration: for every operation a temporary rclone
+// configuration file (0600, in the runtime folder) is written with them, and
+// removed afterwards. rclone refreshes the OneDrive token when it expires and
+// writes it back to that file: Token reads it so that the service can store the
+// new one.
 package cloud
 
 import (
@@ -24,6 +25,21 @@ import (
 // Binary is the rclone command.
 var Binary = "rclone"
 
+// Retries on S3, chosen by measuring against a server that is down. rclone repeats
+// every request both in the AWS SDK and in its own layer, with growing pauses, so
+// its default of 10 keeps a mere listing going for minutes (with 8, a copy gives up
+// in 2-16 minutes depending on the rclone version; with 3, a listing in 1-17 seconds).
+var (
+	S3CopyRetries  = "8"   // copies: they should get over a network problem
+	S3CheckRetries = "3"   // connection test, browsing, checks: an answer is awaited
+	S3RetriesSleep = "30s" // between the attempts at a whole copy
+	// S3StallTimeout stops a copy that makes no progress: rclone retries file by file,
+	// so with the server gone in the middle of a run it could go on for many hours
+	// with thousands of files left. Stopping is safe (deletions come after all the
+	// transfers) and the next run continues.
+	S3StallTimeout = 30 * time.Minute
+)
+
 // Available reports whether rclone is installed.
 func Available() error {
 	if _, err := exec.LookPath(Binary); err != nil {
@@ -32,12 +48,49 @@ func Available() error {
 	return nil
 }
 
-// Remote is a OneDrive drive, or a local folder simulating it (DevRoot, dev mode).
+// Remote is a OneDrive drive, a local folder simulating it (DevRoot, dev mode), or
+// an S3 bucket (S3 set).
 type Remote struct {
 	DriveID   string
 	DriveType string
 	Token     string // JSON of the OAuth token
 	DevRoot   string
+	S3        *S3
+}
+
+// S3 is a bucket on AWS (Endpoint "") or on an S3-compatible service.
+type S3 struct {
+	Endpoint  string
+	Region    string
+	Bucket    string
+	AccessKey string
+	SecretKey string
+}
+
+// section writes the rclone configuration of the bucket. no_check_bucket stops
+// rclone from creating the bucket when it does not exist: a mistyped name must be
+// an error, not a new bucket that receives the backup.
+func (s *S3) section() (string, error) {
+	if strings.ContainsAny(s.Endpoint+s.Region+s.Bucket+s.AccessKey+s.SecretKey, "\r\n") {
+		return "", errors.New("invalid S3 settings")
+	}
+	if s.Bucket == "" || s.AccessKey == "" || s.SecretKey == "" {
+		return "", errors.New("incomplete S3 settings")
+	}
+	provider := "AWS"
+	if s.Endpoint != "" {
+		provider = "Other"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "[od]\ntype = s3\nprovider = %s\nenv_auth = false\nno_check_bucket = true\naccess_key_id = %s\nsecret_access_key = %s\n",
+		provider, s.AccessKey, s.SecretKey)
+	if s.Region != "" {
+		fmt.Fprintf(&b, "region = %s\n", s.Region)
+	}
+	if s.Endpoint != "" {
+		fmt.Fprintf(&b, "endpoint = %s\n", s.Endpoint)
+	}
+	return b.String(), nil
 }
 
 // Crypt enables client-side encryption (rclone crypt) under the destination.
@@ -49,14 +102,16 @@ type Crypt struct {
 // Config is a temporary rclone configuration.
 type Config struct {
 	path string
-	base string // drive-absolute path prefix in the "od" remote ("" or the dev root)
-	// Root is the rclone path of the OneDrive folder of the job (the encrypted
-	// remote over it if Crypt): the destination of an upload, or the source of a
-	// download.
+	// base is the path prefix in the "od" remote (the name of the remote also for
+	// S3): "", the dev root or the bucket.
+	base string
+	// Root is the rclone path of the cloud folder of the job (the encrypted remote
+	// over it if Crypt): the destination of an upload, or the source of a download.
 	Root string
-	// Raw is the OneDrive folder itself (== Root without encryption).
+	// Raw is the cloud folder itself (== Root without encryption).
 	Raw       string
 	encrypted bool
+	s3        bool
 }
 
 // NewConfig writes the rclone configuration for the drive in dir. root is the
@@ -67,10 +122,18 @@ func NewConfig(dir string, r Remote, root string, crypt *Crypt) (*Config, error)
 	}
 	var b strings.Builder
 	c := &Config{}
-	if r.DevRoot != "" {
+	switch {
+	case r.S3 != nil:
+		sec, err := r.S3.section()
+		if err != nil {
+			return nil, err
+		}
+		b.WriteString(sec)
+		c.base, c.s3 = r.S3.Bucket, true
+	case r.DevRoot != "":
 		b.WriteString("[od]\ntype = local\n")
 		c.base = r.DevRoot
-	} else {
+	default:
 		fmt.Fprintf(&b, "[od]\ntype = onedrive\ntoken = %s\ndrive_id = %s\ndrive_type = %s\n", r.Token, r.DriveID, r.DriveType)
 	}
 	c.Root = c.Abs(root)
@@ -105,14 +168,14 @@ func NewConfig(dir string, r Remote, root string, crypt *Crypt) (*Config, error)
 	return c, nil
 }
 
-// Close removes the configuration file (it holds the token).
+// Close removes the configuration file (it holds the credentials).
 func (c *Config) Close() {
 	if c != nil && c.path != "" {
 		os.Remove(c.path)
 	}
 }
 
-// Abs is the rclone path of a folder given from the root of the drive.
+// Abs is the rclone path of a folder given from the root of the drive or bucket.
 func (c *Config) Abs(p string) string {
 	p = strings.Trim(p, "/")
 	if c.base != "" {
@@ -163,6 +226,9 @@ func (c *Config) command(ctx context.Context, args ...string) *exec.Cmd {
 // run executes rclone and returns its standard output; the error carries the
 // last line of the error output.
 func (c *Config) run(ctx context.Context, args ...string) ([]byte, error) {
+	if c.s3 {
+		args = append(args, "--low-level-retries", S3CheckRetries)
+	}
 	var stderr bytes.Buffer
 	cmd := c.command(ctx, args...)
 	cmd.Stderr = &stderr
@@ -211,15 +277,31 @@ func (c *Config) ListDirs(ctx context.Context, remote string) ([]string, error) 
 
 // IsEmpty reports whether a folder has no files or folders (the archive folder
 // does not count); a missing folder is an error.
+//
+// On S3 only files count, wherever they are: folders can exist without any (some
+// services keep them after their files are deleted, web consoles create them as
+// marker objects), and a restore must not take them for something to copy.
 func (c *Config) IsEmpty(ctx context.Context, remote string) (bool, error) {
-	out, err := c.run(ctx, "lsf", "--max-depth", "1", "--exclude", "/"+archiveDirName+"/**", remote)
+	args := []string{"lsf", "--max-depth", "1", "--exclude", "/" + archiveDirName + "/**", remote}
+	if c.s3 {
+		args = []string{"lsf", "-R", "--files-only", "--fast-list", "--exclude", "/" + archiveDirName + "/**", remote}
+	}
+	out, err := c.run(ctx, args...)
 	if err != nil {
 		return false, err
 	}
 	return strings.TrimSpace(string(out)) == "", nil
 }
 
-// Mkdir creates a folder.
+// CheckAccess fails if a folder cannot be listed: wrong credentials, a bucket that
+// does not exist. On S3 a missing folder is not an error (see IsEmpty).
+func (c *Config) CheckAccess(ctx context.Context, remote string) error {
+	_, err := c.run(ctx, "lsf", "--max-depth", "1", remote)
+	return err
+}
+
+// Mkdir creates a folder (nothing happens on S3, where folders do not exist until
+// they contain a file).
 func (c *Config) Mkdir(ctx context.Context, remote string) error {
 	_, err := c.run(ctx, "mkdir", remote)
 	return err
@@ -281,18 +363,29 @@ func stripStamp(l string) string {
 	return strings.TrimPrefix(l, "ERROR : ")
 }
 
+func isContinuation(l string) bool {
+	return strings.HasPrefix(l, "\t") || strings.HasPrefix(l, " ")
+}
+
+// firstLine keeps the meaningful part of a message on several lines.
+func firstLine(s string) string {
+	s, _, _ = strings.Cut(s, "\n")
+	return strings.TrimSpace(s)
+}
+
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for i := len(lines) - 1; i >= 0; i-- {
-		l := strings.TrimSpace(lines[i])
-		if l == "" {
+		// an indented line continues the previous one (S3 errors: "\tstatus code: 403...")
+		if strings.TrimSpace(lines[i]) == "" || isContinuation(lines[i]) {
 			continue
 		}
+		l := strings.TrimSpace(lines[i])
 		var j struct {
 			Msg string `json:"msg"`
 		}
 		if json.Unmarshal([]byte(l), &j) == nil && j.Msg != "" {
-			return j.Msg
+			return firstLine(j.Msg)
 		}
 		return stripStamp(l)
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -14,12 +15,13 @@ import (
 	"strings"
 )
 
-// Connection describes an SMB/CIFS server and its credentials, or a OneDrive
-// account (Kind ConnOneDrive) whose sign-in token is kept in PasswordEnc.
+// Connection describes an SMB/CIFS server and its credentials, a OneDrive account
+// (Kind ConnOneDrive) whose sign-in token is kept in PasswordEnc, or an S3 bucket
+// (Kind ConnS3) with the access key in Username and the secret key in PasswordEnc.
 type Connection struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
-	Kind        string `json:"kind,omitempty"` // "" = SMB, ConnOneDrive
+	Kind        string `json:"kind,omitempty"` // "" = SMB, ConnOneDrive, ConnS3
 	Host        string `json:"host,omitempty"`
 	Domain      string `json:"domain,omitempty"`
 	Username    string `json:"username"`
@@ -31,17 +33,28 @@ type Connection struct {
 	Account   string `json:"account,omitempty"`
 	DriveID   string `json:"drive_id,omitempty"`
 	DriveType string `json:"drive_type,omitempty"` // personal, business, documentLibrary
+
+	// S3: Endpoint is "" for AWS, otherwise the address of an S3-compatible service.
+	Endpoint string `json:"endpoint,omitempty"`
+	Region   string `json:"region,omitempty"`
+	Bucket   string `json:"bucket,omitempty"`
 }
 
-// ConnOneDrive is the kind of the OneDrive connections (off-site copies).
-const ConnOneDrive = "onedrive"
+// Kinds of the connections for off-site copies (SMB is the empty kind).
+const (
+	ConnOneDrive = "onedrive"
+	ConnS3       = "s3"
+)
 
 func (cn *Connection) IsOneDrive() bool { return cn.Kind == ConnOneDrive }
+func (cn *Connection) IsS3() bool       { return cn.Kind == ConnS3 }
+func (cn *Connection) IsSMB() bool      { return cn.Kind == "" }
 
 const (
 	LocSMB      = "smb"
 	LocLocal    = "local"
-	LocOneDrive = "onedrive" // destination only
+	LocOneDrive = "onedrive"
+	LocS3       = "s3"
 )
 
 // Location is a folder: local to the server or on an SMB share.
@@ -51,6 +64,9 @@ type Location struct {
 	Share        string `json:"share,omitempty"`
 	Path         string `json:"path,omitempty"`
 }
+
+// IsCloud reports whether the location is copied by rclone (OneDrive or S3).
+func (l Location) IsCloud() bool { return l.Type == LocOneDrive || l.Type == LocS3 }
 
 const (
 	ModeMirror        = "mirror"
@@ -116,7 +132,7 @@ type Job struct {
 	// zip files (0 = never).
 	LogCompressDays int `json:"log_compress_days,omitempty"`
 
-	// Encrypt encrypts the files before they are uploaded to OneDrive (rclone
+	// Encrypt encrypts the files before they are uploaded to the cloud (rclone
 	// crypt), with the password in CryptPassEnc (encrypted with the master key).
 	Encrypt      bool   `json:"encrypt,omitempty"`
 	EncryptNames bool   `json:"encrypt_names,omitempty"` // file and folder names too
@@ -212,10 +228,83 @@ func (c *Config) Job(id string) *Job {
 	return nil
 }
 
-var hostRe = regexp.MustCompile(`^[A-Za-z0-9._:\-\[\]]+$`)
+var (
+	hostRe = regexp.MustCompile(`^[A-Za-z0-9._:\-\[\]]+$`)
+	// the bucket rules of AWS, relaxed for the older names other services allow
+	bucketRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,254}$`)
+	regionRe = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+)
+
+// NormalizeEndpoint checks the address of an S3 service and returns it as
+// scheme://host[:port] ("" stays "", meaning AWS). Without a scheme it is HTTPS.
+func NormalizeEndpoint(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", nil
+	}
+	if !strings.Contains(s, "://") {
+		s = "https://" + s
+	}
+	u, err := url.Parse(s)
+	bad := err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" ||
+		u.User != nil || u.RawQuery != "" || u.Fragment != "" || (u.Path != "" && u.Path != "/")
+	if bad {
+		return "", errors.New(T("invalid S3 address (e.g. https://s3.example.com or http://192.168.1.50:9000, without a path)"))
+	}
+	return u.Scheme + "://" + strings.ToLower(u.Host), nil
+}
+
+// S3HostPort returns the host and TCP port of the custom endpoint of an S3
+// connection (ok = false for AWS, which is reached over HTTPS).
+func (cn *Connection) S3HostPort() (host, port string, ok bool) {
+	u, err := url.Parse(cn.Endpoint)
+	if !cn.IsS3() || cn.Endpoint == "" || err != nil {
+		return "", "", false
+	}
+	port = u.Port()
+	if port == "" {
+		port = "443"
+		if u.Scheme == "http" {
+			port = "80"
+		}
+	}
+	return u.Hostname(), port, true
+}
+
+func (cn *Connection) validateS3() error {
+	cn.Host, cn.Domain, cn.SMBVersion = "", "", ""
+	cn.Account, cn.DriveID, cn.DriveType = "", "", ""
+	cn.Username = strings.TrimSpace(cn.Username)
+	cn.Bucket = strings.TrimSpace(cn.Bucket)
+	cn.Region = strings.TrimSpace(cn.Region)
+	if cn.Name == "" {
+		return errors.New(T("the connection name is required"))
+	}
+	var err error
+	if cn.Endpoint, err = NormalizeEndpoint(cn.Endpoint); err != nil {
+		return err
+	}
+	if cn.Region == "" && cn.Endpoint == "" {
+		return errors.New(T("S3: enter the region of the bucket (e.g. eu-west-1)"))
+	}
+	if cn.Region != "" && !regionRe.MatchString(cn.Region) {
+		return errors.New(T("S3: invalid region"))
+	}
+	if !bucketRe.MatchString(cn.Bucket) {
+		return errors.New(T("S3: invalid bucket name"))
+	}
+	if cn.Username == "" || strings.ContainsAny(cn.Username, " \t\r\n") {
+		return errors.New(T("S3: enter the access key"))
+	}
+	return nil
+}
 
 func (cn *Connection) Validate() error {
 	cn.Name = strings.TrimSpace(cn.Name)
+	if cn.IsS3() {
+		return cn.validateS3()
+	}
+	cn.Endpoint, cn.Region, cn.Bucket = "", "", ""
 	if cn.IsOneDrive() {
 		cn.Host, cn.Username, cn.Domain, cn.SMBVersion = "", "", "", ""
 		if cn.Name == "" {
@@ -275,7 +364,7 @@ func CleanSubPath(p string) (string, error) {
 func (l *Location) validate(c *Config, what string) error {
 	switch l.Type {
 	case LocSMB:
-		if cn := c.Connection(l.ConnectionID); cn == nil || cn.IsOneDrive() {
+		if cn := c.Connection(l.ConnectionID); cn == nil || !cn.IsSMB() {
 			return errors.New(what + ": " + T("select a connection"))
 		}
 		l.Share = strings.Trim(strings.TrimSpace(l.Share), `\/`)
@@ -299,6 +388,16 @@ func (l *Location) validate(c *Config, what string) error {
 	case LocOneDrive:
 		if cn := c.Connection(l.ConnectionID); cn == nil || !cn.IsOneDrive() {
 			return errors.New(what + ": " + T("select a OneDrive connection"))
+		}
+		l.Share = ""
+		p, err := CleanSubPath(l.Path)
+		if err != nil {
+			return fmt.Errorf("%s: %w", what, err)
+		}
+		l.Path = p
+	case LocS3:
+		if cn := c.Connection(l.ConnectionID); cn == nil || !cn.IsS3() {
+			return errors.New(what + ": " + T("select an S3 connection"))
 		}
 		l.Share = ""
 		p, err := CleanSubPath(l.Path)
@@ -333,6 +432,12 @@ func (l Location) Display(c *Config) string {
 			name = cn.Name
 		}
 		return "OneDrive " + name + ":/" + l.Path
+	case LocS3:
+		bucket := "?"
+		if cn := c.Connection(l.ConnectionID); cn != nil {
+			bucket = cn.Bucket
+		}
+		return "s3://" + bucket + "/" + l.Path
 	}
 	return "?"
 }
@@ -397,27 +502,35 @@ func (j *Job) Validate(c *Config) error {
 	return j.Schedule.Validate()
 }
 
-// validateCloud checks the settings that depend on a OneDrive destination.
+// validateCloud checks the settings that depend on a cloud source or destination.
 func (j *Job) validateCloud(c *Config) error {
-	if j.LogDir != nil && j.LogDir.Type == LocOneDrive {
+	if j.LogDir != nil && j.LogDir.IsCloud() {
 		return errors.New(T("log folder: choose a folder of this server or a network folder"))
 	}
-	srcOD, dstOD := j.Source.Type == LocOneDrive, j.Dest.Type == LocOneDrive
-	if srcOD && dstOD {
-		return errors.New(T("source and destination cannot both be OneDrive"))
+	srcCloud, dstCloud := j.Source.IsCloud(), j.Dest.IsCloud()
+	if srcCloud && dstCloud {
+		return errors.New(T("source and destination cannot both be cloud storage (OneDrive or S3)"))
 	}
-	if srcOD {
-		j.SourceRO = true // a copy never changes a OneDrive source
+	if srcCloud {
+		j.SourceRO = true // a copy never changes a cloud source
+	}
+	if j.Source.Type == LocS3 {
+		// S3 has no folders: an empty source and a mistyped path look the same,
+		// so restoring from nothing is never allowed
+		j.AllowEmptySource = false
+	}
+	if j.Dest.Type == LocS3 && j.Dest.Path == "" && isMirror(j.Mode) {
+		return errors.New(T("destination: a mirror needs a folder in the bucket, because it deletes everything else in the folder it copies to"))
 	}
 	if a := j.Archive; a != nil {
 		switch {
-		case dstOD && (a.Type != LocOneDrive || a.ConnectionID != j.Dest.ConnectionID):
-			return errors.New(T("deleted items folder: with a OneDrive destination it must be on the same OneDrive"))
-		case !dstOD && a.Type == LocOneDrive:
-			return errors.New(T("deleted items folder: OneDrive can be used only with a OneDrive destination"))
+		case dstCloud && (a.Type != j.Dest.Type || a.ConnectionID != j.Dest.ConnectionID):
+			return errors.New(T("deleted items folder: with a cloud destination it must be on the same account or bucket"))
+		case !dstCloud && a.IsCloud():
+			return errors.New(T("deleted items folder: cloud storage can be used only with a cloud destination"))
 		}
 	}
-	if !srcOD && !dstOD {
+	if !srcCloud && !dstCloud {
 		j.Encrypt, j.EncryptNames, j.CryptPassEnc, j.CryptPassword = false, false, "", ""
 		return nil
 	}
@@ -425,7 +538,7 @@ func (j *Job) validateCloud(c *Config) error {
 		j.EncryptNames, j.CryptPassEnc, j.CryptPassword = false, "", ""
 		return nil
 	}
-	if dstOD && j.Archive != nil {
+	if dstCloud && j.Archive != nil {
 		return errors.New(T("with encryption the deleted items are kept in the archive folder of the destination: leave the deleted items folder on default"))
 	}
 	if j.Checksum {
@@ -467,7 +580,8 @@ func (c *Config) Within(child, parent Location) bool {
 // locRoot identifies the storage a location is on, and its path there. SMB
 // locations are compared by host and share (not by connection: two connections
 // with different users can point to the same server) and OneDrive ones by drive,
-// case-insensitively like Windows; local paths are compared exactly.
+// case-insensitively like Windows; S3 ones by service and bucket, and they are
+// case-sensitive like local paths, which are compared exactly.
 func (c *Config) locRoot(l Location) (root, p string, fold, ok bool) {
 	switch l.Type {
 	case LocSMB:
@@ -484,6 +598,13 @@ func (c *Config) locRoot(l Location) (root, p string, fold, ok bool) {
 		}
 		p, _ = CleanSubPath(l.Path)
 		return "onedrive:" + strings.ToLower(cn.DriveID), p, true, true
+	case LocS3:
+		cn := c.Connection(l.ConnectionID)
+		if cn == nil {
+			return "", "", false, false
+		}
+		p, _ = CleanSubPath(l.Path)
+		return "s3:" + strings.ToLower(cn.Endpoint) + "/" + cn.Bucket, p, false, true
 	case LocLocal:
 		return "local", filepath.Clean(l.Path), false, true
 	}

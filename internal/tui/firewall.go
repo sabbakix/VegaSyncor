@@ -219,7 +219,9 @@ func ruleText(r firewall.Rule) string {
 	case firewall.KindSMB:
 		return T("SMB to the connection hosts")
 	case firewall.KindCloud:
-		return T("OneDrive (HTTPS to Microsoft)")
+		return T("cloud storage (HTTPS to any host)")
+	case firewall.KindS3:
+		return Tf("S3 server (port %s)", ports)
 	case firewall.KindDrop:
 		return T("everything else (logged)")
 	}
@@ -287,7 +289,7 @@ func (m *Model) viewFirewall() (string, string) {
 			"  "+Tf("Press %s to enable the lockdown.", sKey.Render("e")))
 	}
 	if len(st.Unresolved) > 0 {
-		status = append(status, sWarn.Render(trunc(Tf("Cannot resolve %s: SMB to these hosts is blocked. Use IP addresses in the connections.",
+		status = append(status, sWarn.Render(trunc(Tf("Cannot resolve %s: connections to these hosts are blocked. Use IP addresses in the connections.",
 			strings.Join(st.Unresolved, ", ")), w-6)))
 	}
 	if st.Error != "" {

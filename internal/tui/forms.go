@@ -15,7 +15,7 @@ import (
 func connOptions(conns []api.ConnectionView) []option {
 	var out []option
 	for _, c := range conns {
-		if !c.IsOneDrive() {
+		if c.IsSMB() {
 			out = append(out, option{c.ID, Tf("%s  (%s, user %s)", c.Name, c.Host, c.Username)})
 		}
 	}
@@ -39,6 +39,20 @@ func oneDriveOptions(conns []api.ConnectionView) []option {
 	return out
 }
 
+// s3Options lists the S3 connections.
+func s3Options(conns []api.ConnectionView) []option {
+	var out []option
+	for _, c := range conns {
+		if c.IsS3() {
+			out = append(out, option{c.ID, Tf("%s  (S3 %s)", c.Name, c.Bucket)})
+		}
+	}
+	if len(out) == 0 {
+		return []option{{"", T("(none – add an S3 connection in the Connections tab)")}}
+	}
+	return out
+}
+
 func driveTypeLabel(t string) string {
 	switch t {
 	case "personal":
@@ -54,7 +68,7 @@ func driveTypeLabel(t string) string {
 // firstConn returns the first SMB connection ("" if none).
 func firstConn(conns []api.ConnectionView) string {
 	for _, c := range conns {
-		if !c.IsOneDrive() {
+		if c.IsSMB() {
 			return c.ID
 		}
 	}
@@ -76,7 +90,8 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		}
 	}
 	locTypes := []option{{config.LocSMB, T("Network folder (SMB)")}, {config.LocLocal, T("Local folder on this server")}}
-	dstTypes := append(append([]option{}, locTypes...), option{config.LocOneDrive, T("OneDrive (off-site copy)")})
+	dstTypes := append(append([]option{}, locTypes...),
+		option{config.LocOneDrive, T("OneDrive (off-site copy)")}, option{config.LocS3, T("S3 bucket (off-site copy)")})
 	var modes []option
 	for _, m := range config.Modes {
 		modes = append(modes, option{m, config.ModeLabel(m)})
@@ -88,8 +103,11 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 	isSMB := func(k string) func(*form) bool { return func(f *form) bool { return f.choice(k) == config.LocSMB } }
 	isOD := func(f *form) bool { return f.choice("dst_type") == config.LocOneDrive }
 	srcOD := func(f *form) bool { return f.choice("src_type") == config.LocOneDrive }
-	anyOD := func(f *form) bool { return isOD(f) || srcOD(f) }
-	encOn := func(f *form) bool { return anyOD(f) && f.get("encrypt").Bool }
+	dstS3 := func(f *form) bool { return f.choice("dst_type") == config.LocS3 }
+	srcS3 := func(f *form) bool { return f.choice("src_type") == config.LocS3 }
+	srcCloud := func(f *form) bool { return srcOD(f) || srcS3(f) }
+	anyCloud := func(f *form) bool { return isOD(f) || dstS3(f) || srcCloud(f) }
+	encOn := func(f *form) bool { return anyCloud(f) && f.get("encrypt").Bool }
 	passHint := T("at least 8 characters")
 	if j.CryptPassEnc != "" {
 		passHint = T("unchanged (type a new one to change it)")
@@ -152,11 +170,13 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 
 		section(T("1. Source – where to copy from")).id(secSource),
 		newChoice("src_type", T("Type"), dstTypes, j.Source.Type).
-			withHelp(T("shared folder of a PC/server on the network, a folder of this server, or OneDrive (to restore or check an off-site copy)")),
+			withHelp(T("shared folder of a PC/server on the network, a folder of this server, or the cloud: OneDrive or S3 (to restore or check an off-site copy)")),
 		newChoice("src_conn", T("Connection"), connOptions(conns), j.Source.ConnectionID).when(isSMB("src_type")).
 			withHelp(T("PC or server to read from, with the credentials saved in the Connections tab")),
 		newChoice("src_odconn", T("OneDrive account"), oneDriveOptions(conns), j.Source.ConnectionID).when(srcOD).
 			withHelp(T("OneDrive account to copy from (add it in the Connections tab)")),
+		newChoice("src_s3conn", T("S3 connection"), s3Options(conns), j.Source.ConnectionID).when(srcS3).
+			withHelp(T("S3 bucket to copy from (add it in the Connections tab)")),
 		newText("src_share", T("Share"), j.Source.Share, T("e.g. Documents")).browsable().when(isSMB("src_type")).
 			withHelp(T("name of the shared folder on the PC/server (Enter to list them)")),
 		newText("src_path", T("Subfolder"), j.Source.Path, T("empty = the whole share")).browsable().labeled(pathLabel("src")).
@@ -164,20 +184,24 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 			switch f.choice("src_type") {
 			case config.LocOneDrive:
 				return T("e.g. Backup/Accounting (empty = root of OneDrive)")
+			case config.LocS3:
+				return T("e.g. Backup/Accounting (empty = the whole bucket)")
 			case config.LocLocal:
 				return T("e.g. /srv/data/accounting")
 			}
 			return T("empty = the whole share")
 		}),
-		newBool("src_ro", T("Read-only"), j.SourceRO).when(func(f *form) bool { return !srcOD(f) }).
+		newBool("src_ro", T("Read-only"), j.SourceRO).when(func(f *form) bool { return !srcCloud(f) }).
 			withHelp(T("recommended: the source is mounted read-only, it cannot be changed or deleted")),
 
 		section(T("2. Destination – where to save the copy")).id(secDest),
-		newChoice("dst_type", T("Type"), dstTypes, j.Dest.Type).withHelp(T("where to save the copy: a folder of this server (also a mounted USB disk or NAS), a network folder, or OneDrive for an off-site copy")),
+		newChoice("dst_type", T("Type"), dstTypes, j.Dest.Type).withHelp(T("where to save the copy: a folder of this server (also a mounted USB disk or NAS), a network folder, or the cloud (OneDrive, S3) for an off-site copy")),
 		newChoice("dst_conn", T("Connection"), connOptions(conns), j.Dest.ConnectionID).when(isSMB("dst_type")).
 			withHelp(T("PC, server or NAS to write the copy to")),
 		newChoice("dst_odconn", T("OneDrive account"), oneDriveOptions(conns), j.Dest.ConnectionID).when(isOD).
 			withHelp(T("OneDrive account to copy to (add it in the Connections tab)")),
+		newChoice("dst_s3conn", T("S3 connection"), s3Options(conns), j.Dest.ConnectionID).when(dstS3).
+			withHelp(T("S3 bucket to copy to (add it in the Connections tab)")),
 		newText("dst_share", T("Share"), j.Dest.Share, T("e.g. Backup")).browsable().when(isSMB("dst_type")).
 			withHelp(T("destination shared folder (Enter to list them)")),
 		newText("dst_path", T("Folder"), j.Dest.Path, T("empty = root of the share")).browsable().labeled(pathLabel("dst")).
@@ -185,21 +209,23 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 			switch f.choice("dst_type") {
 			case config.LocOneDrive:
 				return T("e.g. Backup/Accounting (empty = root of OneDrive)")
+			case config.LocS3:
+				return T("e.g. Backup/Accounting (created by the first copy)")
 			case config.LocLocal:
 				return T("e.g. /srv/backup/accounting")
 			}
 			return T("empty = root of the share")
 		}),
 
-		section(T("OneDrive encryption")).id(secCrypt).when(anyOD),
-		newBool("encrypt", T("Encrypted copy"), j.Encrypt).when(anyOD).helpFn(func(f *form) string {
-			if srcOD(f) {
-				return T("on if the OneDrive folder holds an encrypted copy: the files are decrypted on this server with the same password used to upload them")
+		section(T("Cloud encryption")).id(secCrypt).when(anyCloud),
+		newBool("encrypt", T("Encrypted copy"), j.Encrypt).when(anyCloud).helpFn(func(f *form) string {
+			if srcCloud(f) {
+				return T("on if the cloud folder holds an encrypted copy: the files are decrypted on this server with the same password used to upload them")
 			}
-			return T("files are encrypted on this server before the upload: Microsoft cannot read them, but they can only be read back with VegaSyncor/rclone and the password")
+			return T("files are encrypted on this server before the upload: the cloud provider cannot read them, but they can only be read back with VegaSyncor/rclone and the password")
 		}),
 		newBool("encrypt_names", T("Encrypt names too"), j.EncryptNames).when(encOn).
-			withHelp(T("also file and folder names are unreadable on OneDrive (to read a copy back, use the same setting as when it was uploaded)")),
+			withHelp(T("also file and folder names are unreadable in the cloud (to read a copy back, use the same setting as when it was uploaded)")),
 		newPassword("crypt_pass", T("Encryption password"), passHint).when(encOn).
 			withHelp(T("WITHOUT THIS PASSWORD THE COPY CANNOT BE READ: keep it somewhere safe (it is also in the configuration exports); changing it later uploads everything again")),
 		newPassword("crypt_pass2", T("Repeat password"), "").when(encOn).withHelp(T("type the same password again")),
@@ -223,7 +249,7 @@ func newJobForm(j *config.Job, conns []api.ConnectionView, zone string) *form {
 		newText("arc_path", T("Folder"), arc.Path, T("e.g. Deleted/Accounting")).browsable().labeled(pathLabel("arc")).when(arcOn).
 			withHelp(T("Enter to browse the folders; it can also be a subfolder of the destination")),
 		newBool("allow_empty", T("Allow empty source"), j.AllowEmptySource).
-			when(func(f *form) bool { return f.choice("mode") != config.ModeAdditive }).
+			when(func(f *form) bool { return f.choice("mode") != config.ModeAdditive && !srcS3(f) }).
 			withHelp(T("normally a mirror with an empty source is blocked so the backup is not wiped")),
 		newBool("checksum", T("Compare contents"), j.Checksum).
 			withHelp(T("compares the file contents (checksum): finds every change, even with unchanged size and date, but reads all the files on both sides at every run (much slower on large shares); off = compare size and modification time")),
@@ -295,6 +321,8 @@ func pathLabel(prefix string) func(*form) string {
 			return T("Subfolder")
 		case config.LocOneDrive:
 			return T("OneDrive folder")
+		case config.LocS3:
+			return T("Folder in the bucket")
 		}
 		return T("Folder (path)")
 	}
@@ -310,6 +338,18 @@ func atoiField(fm *form, key, what string) (int, error) {
 		return 0, errors.New(what + ": " + T("enter a number"))
 	}
 	return n, nil
+}
+
+// cloudConnChoice returns the cloud connection chosen for a part of the job. Only
+// source and destination have the fields: the archive uses the destination's.
+func cloudConnChoice(fm *form, prefix, locType string) string {
+	if prefix != "src" {
+		prefix = "dst"
+	}
+	if locType == config.LocS3 {
+		return fm.choice(prefix + "_s3conn")
+	}
+	return fm.choice(prefix + "_odconn")
 }
 
 // jobFromForm builds the job from the form fields (the service does the full validation).
@@ -329,17 +369,16 @@ func jobFromForm(fm *form, id string) (config.Job, error) {
 		case config.LocSMB:
 			l.ConnectionID = fm.choice(p + "_conn")
 			l.Share = fm.val(p + "_share")
-		case config.LocOneDrive:
-			if p == "src" {
-				l.ConnectionID = fm.choice("src_odconn")
-			} else {
-				l.ConnectionID = fm.choice("dst_odconn") // the archive is on the same OneDrive as the destination
-			}
+		case config.LocOneDrive, config.LocS3:
+			l.ConnectionID = cloudConnChoice(fm, p, l.Type)
 		}
 		return l
 	}
 	j.Source, j.Dest = loc("src"), loc("dst")
-	if (j.Dest.Type == config.LocOneDrive || j.Source.Type == config.LocOneDrive) && fm.get("encrypt").Bool {
+	if j.Source.IsCloud() {
+		j.SourceRO = true // its field is hidden: it may hold the value of another type
+	}
+	if (j.Dest.IsCloud() || j.Source.IsCloud()) && fm.get("encrypt").Bool {
 		j.Encrypt, j.EncryptNames = true, fm.get("encrypt_names").Bool
 		pass := fm.get("crypt_pass").Input.Value()
 		if pass != "" {
@@ -424,7 +463,7 @@ func newConnForm(c *api.ConnectionView) *form {
 		pwPlace = T("(unchanged – leave empty to keep it)")
 		pwHelp = T("leave empty to keep the saved one; enter a value only to change it")
 	}
-	kinds := []option{{"", T("Network folder (SMB)")}, {config.ConnOneDrive, T("OneDrive (off-site copy)")}}
+	kinds := []option{{"", T("Network folder (SMB)")}, {config.ConnOneDrive, T("OneDrive (off-site copy)")}, {config.ConnS3, T("S3 bucket (off-site copy)")}}
 	if !isNew { // the type of an existing connection cannot change
 		for _, k := range kinds {
 			if k.Value == c.Kind {
@@ -434,6 +473,14 @@ func newConnForm(c *api.ConnectionView) *form {
 	}
 	smb := func(f *form) bool { return f.choice("kind") == "" }
 	od := func(f *form) bool { return f.choice("kind") == config.ConnOneDrive }
+	s3 := func(f *form) bool { return f.choice("kind") == config.ConnS3 }
+	s3User, secretPlace := "", T("the secret key of the access key")
+	if c.IsS3() {
+		s3User = c.Username
+	}
+	if !isNew {
+		secretPlace = T("(unchanged – leave empty to keep it)")
+	}
 	account := ""
 	if c.IsOneDrive() && c.DriveID != "" {
 		account = accountLabel(c.Account, c.DriveType)
@@ -444,7 +491,7 @@ func newConnForm(c *api.ConnectionView) *form {
 	fm := &form{Title: title, orig: &c.Connection, Fields: []*field{
 		section(T("Connection")),
 		newChoice("kind", T("Type"), kinds, c.Kind).
-			withHelp(T("a shared folder on the network (source or destination), or a OneDrive account for off-site copies (and to restore them)")),
+			withHelp(T("a shared folder on the network (source or destination), or a OneDrive account or S3 bucket for off-site copies (and to restore them)")),
 		newText("name", T("Name"), c.Name, T("e.g. Admin Office PC")).withHelp(T("descriptive name, used to choose the connection in the jobs")),
 		section(T("Server")).when(smb),
 		newText("host", T("Host / IP address"), c.Host, T("e.g. 192.168.1.20 or OFFICE-PC")).when(smb).
@@ -458,6 +505,17 @@ func newConnForm(c *api.ConnectionView) *form {
 		newPassword("password", T("Password"), pwPlace).when(smb).withHelp(pwHelp),
 		section(T("OneDrive")).when(od),
 		signIn,
+		section(T("S3 bucket")).when(s3),
+		newText("s3_endpoint", T("Service address"), c.Endpoint, T("empty = Amazon S3")).when(s3).
+			withHelp(T("for Backblaze B2, Wasabi, Cloudflare R2, MinIO and others: the address of the service; over the Internet use https://, because http:// sends the files unprotected")),
+		newText("s3_region", T("Region"), c.Region, T("e.g. eu-west-1")).when(s3).
+			withHelp(T("region of the bucket: required for Amazon S3; for other services as their documentation says (Cloudflare R2: auto)")),
+		newText("s3_bucket", T("Bucket"), c.Bucket, T("e.g. company-backup")).when(s3).
+			withHelp(T("it must already exist: VegaSyncor never creates one, so a mistyped name stops the copy")),
+		newText("s3_key", T("Access key"), s3User, T("e.g. AKIA...")).when(s3).
+			withHelp(T("key allowed to list, read, write and delete in the bucket")),
+		newPassword("s3_secret", T("Secret key"), secretPlace).when(s3).
+			withHelp(T("stored encrypted (AES-256), it will not be visible again")),
 	}}
 	fm.init()
 	return fm
@@ -474,6 +532,15 @@ func connFromForm(fm *form, id string, acc *api.OneDriveAccount) api.ConnectionI
 			in.Account, in.DriveID, in.DriveType = orig.Account, orig.DriveID, orig.DriveType
 		}
 		return in
+	}
+	if fm.choice("kind") == config.ConnS3 {
+		return api.ConnectionInput{
+			Connection: config.Connection{
+				ID: id, Name: fm.val("name"), Kind: config.ConnS3, Endpoint: fm.val("s3_endpoint"), Region: fm.val("s3_region"),
+				Bucket: fm.val("s3_bucket"), Username: fm.val("s3_key"),
+			},
+			Password: strings.TrimSpace(fm.get("s3_secret").Input.Value()),
+		}
 	}
 	return api.ConnectionInput{
 		Connection: config.Connection{

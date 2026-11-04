@@ -122,7 +122,7 @@ func (b *browser) displayPath() string {
 	switch b.loc.Type {
 	case config.LocLocal:
 		return b.loc.Path
-	case config.LocOneDrive:
+	case config.LocOneDrive, config.LocS3:
 		return "/" + b.loc.Path
 	}
 	p := strings.ReplaceAll(b.loc.Path, "/", `\`)
