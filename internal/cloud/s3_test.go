@@ -692,6 +692,33 @@ func TestS3EmptyFoldersAreNotContent(t *testing.T) {
 	}
 }
 
+// The same on OneDrive: an empty subfolder is not something to restore.
+func TestOneDriveEmptyFoldersAreNotContent(t *testing.T) {
+	needRclone(t)
+	drive := t.TempDir()
+	os.MkdirAll(filepath.Join(drive, "Backup", "sub", "deep"), 0o755)
+	c, err := NewConfig(t.TempDir(), Remote{DevRoot: drive}, "Backup", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if empty, err := c.IsEmpty(context.Background(), c.Raw); err != nil || !empty {
+		t.Errorf("only empty folders: IsEmpty = %v, %v", empty, err)
+	}
+	write(t, filepath.Join(drive, "Backup", "sub", "deep", "f.txt"), "x")
+	if empty, err := c.IsEmpty(context.Background(), c.Raw); err != nil || empty {
+		t.Errorf("file deep down: IsEmpty = %v, %v", empty, err)
+	}
+	missing, err := NewConfig(t.TempDir(), Remote{DevRoot: drive}, "Missing", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer missing.Close()
+	if _, err := missing.IsEmpty(context.Background(), missing.Raw); err == nil || !strings.Contains(err.Error(), "directory not found") {
+		t.Errorf("missing folder: %v", err)
+	}
+}
+
 func TestS3FolderMarkerObjects(t *testing.T) {
 	srv, s := newFake(t)
 	srv.Put(testBucket, "Backup/", nil)

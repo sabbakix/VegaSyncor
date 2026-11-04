@@ -275,18 +275,13 @@ func (c *Config) ListDirs(ctx context.Context, remote string) ([]string, error) 
 	return dirs, nil
 }
 
-// IsEmpty reports whether a folder has no files or folders (the archive folder
-// does not count); a missing folder is an error.
-//
-// On S3 only files count, wherever they are: folders can exist without any (some
-// services keep them after their files are deleted, web consoles create them as
-// marker objects), and a restore must not take them for something to copy.
+// IsEmpty reports whether a folder has no files, wherever they are (the archive
+// folder does not count): folders can exist without any (some S3 services keep them
+// after their files are deleted, web consoles create them as marker objects), and a
+// restore must not take them for something to copy. On OneDrive and on most S3
+// services a missing folder is an error.
 func (c *Config) IsEmpty(ctx context.Context, remote string) (bool, error) {
-	args := []string{"lsf", "--max-depth", "1", "--exclude", "/" + archiveDirName + "/**", remote}
-	if c.s3 {
-		args = []string{"lsf", "-R", "--files-only", "--fast-list", "--exclude", "/" + archiveDirName + "/**", remote}
-	}
-	out, err := c.run(ctx, args...)
+	out, err := c.run(ctx, "lsf", "-R", "--files-only", "--fast-list", "--exclude", "/"+archiveDirName+"/**", remote)
 	if err != nil {
 		return false, err
 	}

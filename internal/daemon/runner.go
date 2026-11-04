@@ -200,7 +200,7 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 			}
 		}
 		if empty && j.Mode != config.ModeAdditive && !j.AllowEmptySource {
-			return fail(T("safety check"), errors.New(T("the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
+			return fail(T("safety check"), errors.New(T("the source has no files: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
 		}
 	} else {
 		d.setPhase(r, T("connecting to source"))
@@ -222,7 +222,7 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 			if empty, err := syncer.IsEmptyDir(src); err != nil {
 				return fail(T("source"), err)
 			} else if empty {
-				return fail(T("safety check"), errors.New(T("the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
+				return fail(T("safety check"), errors.New(T("the source has no files: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
 			}
 		}
 	}

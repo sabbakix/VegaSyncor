@@ -30,8 +30,8 @@ the clock (or the `L` key).
   on specific days of the week, cron expression, or manual only. The server clock and time zone are
   always visible in the TUI.
 - **Dry run**: shows what would be copied and deleted without touching anything.
-- **Empty-source protection**: if the source turns out empty (e.g. emptied share or failed mount) a
-  mirror is blocked, so the backup is not wiped.
+- **Empty-source protection**: if the source has no files (e.g. emptied share or failed mount; folders
+  without files do not count) a mirror is blocked, so the backup is not wiped.
 - Incremental copy with `rsync` (differences only), bandwidth limit, exclusions, optional content
   comparison (checksum), history and detailed log of every run.
 - **Mouse support** in the TUI (tabs, commands, lists, form fields), alongside the keyboard.
@@ -268,7 +268,7 @@ check it) into a local or network folder; it cannot be on both sides. The copy i
   folder as *Destination*; for an encrypted copy turn on *Encrypted copy* with the **same password
   and the same *Encrypt names too*** used for the upload. A wrong password stops the run without
   writing anything ("the files cannot be decrypted"). The empty-source protection also applies: a
-  missing or empty OneDrive folder never wipes the local copy. The OneDrive side is never changed.
+  OneDrive folder that is missing or has no files never wipes the local copy. The OneDrive side is never changed.
 - **Sign-in**: the token is stored encrypted like the passwords and refreshed automatically by
   every copy. Microsoft revokes it after about 90 days without use, or when the account password
   changes: then edit the connection and sign in again. The sign-in uses rclone's public app ID; no

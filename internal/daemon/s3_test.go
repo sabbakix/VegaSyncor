@@ -219,7 +219,7 @@ func TestS3EmptySourceBlocked(t *testing.T) {
 	d, srv := s3Daemon(t)
 	srv.Put("backups", "Backup/a.txt", []byte("the backup"))
 	st, msg := runJob(t, d, s3Job(config.ModeMirror, localLoc(t.TempDir()), s3Loc("Backup")))
-	if st != api.StatusError || !strings.Contains(msg, "source is empty") || srv.Get("backups", "Backup/a.txt") == nil {
+	if st != api.StatusError || !strings.Contains(msg, "has no files") || srv.Get("backups", "Backup/a.txt") == nil {
 		t.Errorf("%s %s, keys %v", st, msg, srv.Keys("backups"))
 	}
 }
@@ -333,5 +333,61 @@ func TestS3Firewall(t *testing.T) {
 	script := d.fwScript(config.Firewall{Enabled: true}, true)
 	if !strings.Contains(script, "ip daddr { 192.0.2.1, 192.0.2.2 } tcp dport 9000") || !strings.Contains(script, "ip daddr 192.0.2.3 tcp dport 80") {
 		t.Errorf("script:\n%s", script)
+	}
+}
+
+// A mirror from a source with only empty folders does not wipe the backup, on any
+// destination, unless it is explicitly allowed.
+func TestSourceWithOnlyEmptyFolders(t *testing.T) {
+	d, srv := s3Daemon(t)
+	src := t.TempDir()
+	os.MkdirAll(src+"/Accounting/2026", 0o755)
+	srv.Put("backups", "Backup/a.txt", []byte("the backup"))
+	dst := t.TempDir()
+	put(t, dst+"/a.txt", "the backup")
+	for _, l := range []config.Location{s3Loc("Backup"), localLoc(dst)} {
+		j := s3Job(config.ModeMirror, localLoc(src), l)
+		st, msg := runJob(t, d, j)
+		if st != api.StatusError || !strings.Contains(msg, "has no files") {
+			t.Errorf("%s: %s %s", l.Type, st, msg)
+		}
+	}
+	if srv.Get("backups", "Backup/a.txt") == nil {
+		t.Error("the bucket was wiped")
+	}
+	if _, err := os.Stat(dst + "/a.txt"); err != nil {
+		t.Error("the local backup was wiped")
+	}
+	// "Add only" deletes nothing: it goes ahead
+	if st, msg := runJob(t, d, s3Job(config.ModeAdditive, localLoc(src), s3Loc("Backup"))); st != api.StatusOK {
+		t.Errorf("add only: %s %s", st, msg)
+	}
+	// explicitly allowed: the mirror does what was asked
+	j := s3Job(config.ModeMirror, localLoc(src), s3Loc("Backup"))
+	j.AllowEmptySource = true
+	if st, msg := runJob(t, d, j); st != api.StatusOK || srv.Get("backups", "Backup/a.txt") != nil {
+		t.Errorf("allowed: %s %s", st, msg)
+	}
+}
+
+// A OneDrive folder with only empty subfolders does not wipe the local copy.
+func TestOneDriveRestoreFromEmptyFolders(t *testing.T) {
+	d, _ := s3Daemon(t)
+	root := t.TempDir()
+	t.Setenv("VEGASYNCOR_DEV_ONEDRIVE_ROOT", root)
+	os.MkdirAll(root+"/dev-drive/Backup/sub", 0o755)
+	enc, _ := d.box.Encrypt(`{"access_token":"dev"}`, "od")
+	d.mu.Lock()
+	d.cfg.Connections = append(d.cfg.Connections, config.Connection{ID: "od", Name: "OD", Kind: config.ConnOneDrive,
+		DriveID: "dev-drive", DriveType: "personal", PasswordEnc: enc})
+	d.mu.Unlock()
+	restore := t.TempDir()
+	put(t, restore+"/local.txt", "must survive")
+	st, msg := runJob(t, d, s3Job(config.ModeMirror, config.Location{Type: config.LocOneDrive, ConnectionID: "od", Path: "Backup"}, localLoc(restore)))
+	if st != api.StatusError || !strings.Contains(msg, "has no files") {
+		t.Errorf("%s %s", st, msg)
+	}
+	if _, err := os.Stat(restore + "/local.txt"); err != nil {
+		t.Error("the local copy was wiped")
 	}
 }
