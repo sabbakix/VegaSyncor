@@ -150,3 +150,42 @@ func TestOneDriveRoundTrip(t *testing.T) {
 		t.Errorf("crypt password after import = %q, %v (clear %q)", pw, err, j.CryptPassword)
 	}
 }
+
+// An S3 connection (its secret key) moves to the new server.
+func TestS3RoundTrip(t *testing.T) {
+	oldBox, newBox := box(t), box(t)
+	cfg := sample(t, oldBox)
+	secret := `wJalr/XUtnFEMI+K7MDENG=b#key`
+	enc, _ := oldBox.Encrypt(secret, "s1")
+	cfg.Connections = append(cfg.Connections, config.Connection{ID: "s1", Name: "Off-site", Kind: config.ConnS3,
+		Endpoint: "https://s3.example.com", Region: "eu", Bucket: "backups", Username: "AKIA", PasswordEnc: enc})
+	cfg.Jobs = append(cfg.Jobs, config.Job{ID: "j3", Name: "S3 copy", Enabled: true, Source: config.Location{Type: "smb", ConnectionID: "c1", Share: "Docs"},
+		SourceRO: true, Dest: config.Location{Type: config.LocS3, ConnectionID: "s1", Path: "Backup"}, Mode: config.ModeMirrorArchive,
+		Schedule: config.Schedule{Type: config.SchedManual}})
+	p, err := BuildPayload(cfg, oldBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, _ := Encrypt(p, "correct horse battery", "old", "test")
+	if strings.Contains(string(file), secret) {
+		t.Error("secret readable in the file")
+	}
+	got, _, err := Decrypt(file, "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _, err := BuildConfig(got, &config.Config{}, newBox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cn := next.Connection("s1")
+	if pw, err := newBox.Decrypt(cn.PasswordEnc, "s1"); err != nil || pw != secret {
+		t.Errorf("secret after import = %q, %v", pw, err)
+	}
+	if cn.Bucket != "backups" || cn.Endpoint != "https://s3.example.com" || cn.Region != "eu" || cn.Username != "AKIA" || !cn.IsS3() {
+		t.Errorf("connection after import: %+v", cn)
+	}
+	if j := next.Job("j3"); j == nil || j.Dest.Type != config.LocS3 {
+		t.Errorf("job after import: %+v", j)
+	}
+}

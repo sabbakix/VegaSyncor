@@ -149,7 +149,7 @@ func Diagnose() []Check {
 		}
 	}
 	if _, err := exec.LookPath("rclone"); err != nil {
-		out = append(out, Check{CheckWarn, "rclone", T("not installed: needed only to copy to OneDrive (apt install rclone)")})
+		out = append(out, Check{CheckWarn, "rclone", T("not installed: needed only to copy to OneDrive or S3 (apt install rclone)")})
 	} else {
 		out = append(out, Check{CheckOK, "rclone", ""})
 	}

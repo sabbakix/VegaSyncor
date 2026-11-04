@@ -350,12 +350,12 @@ func (m *Model) viewJobDetail(j api.JobStatus) string {
 	if j.Job.SourceRO {
 		ro = "  " + sROBadge.Render(T("READ-ONLY"))
 	}
-	if j.Job.Encrypt && j.Job.Source.Type == config.LocOneDrive {
+	if j.Job.Encrypt && j.Job.Source.IsCloud() {
 		ro += "  " + sROBadge.Render(T("ENCRYPTED"))
 	}
 	lines = append(lines, lbl(T("From"))+trunc(j.Source, w-50)+ro)
 	enc := ""
-	if j.Job.Encrypt && j.Job.Dest.Type == config.LocOneDrive {
+	if j.Job.Encrypt && j.Job.Dest.IsCloud() {
 		enc = "  " + sROBadge.Render(T("ENCRYPTED"))
 	}
 	lines = append(lines, lbl(T("To"))+trunc(j.Dest, w-36)+enc)
@@ -475,6 +475,12 @@ func (m *Model) viewConns() (string, string) {
 			pw = T("signed in")
 			if !c.HasPassword {
 				pw = T("NOT SIGNED IN")
+			}
+		}
+		if c.IsS3() { // HOST, USER, SMB columns: service, bucket, region
+			host, user, ver = "Amazon S3", c.Bucket, c.Region
+			if h, _, ok := c.S3HostPort(); ok {
+				host = h
 			}
 		}
 		row := pad(c.Name, nameW) + " " + pad(host, hostW) + " " + pad(user, userW) + " " +
@@ -604,8 +610,8 @@ func (m *Model) jobPreview() string {
 		case config.LocSMB:
 			l.ConnectionID, l.Share = fm.choice(p+"_conn"), fm.val(p+"_share")
 			l.Path = strings.Trim(strings.ReplaceAll(l.Path, `\`, "/"), "/")
-		case config.LocOneDrive:
-			l.ConnectionID = fm.choice(p + "_odconn")
+		case config.LocOneDrive, config.LocS3:
+			l.ConnectionID = cloudConnChoice(fm, p, l.Type)
 			l.Path = strings.Trim(strings.ReplaceAll(l.Path, `\`, "/"), "/")
 		}
 		return l
@@ -626,26 +632,26 @@ func (m *Model) jobPreview() string {
 	boxW := max((m.w-10)/2, 20)
 	inner := boxW - 4
 	src := sMuted.Render(T("SOURCE")) + "\n" + truncLeft(show(loc("src")), inner) + "\n"
-	if fm.get("src_ro").Bool {
+	srcCloud := config.Location{Type: fm.choice("src_type")}.IsCloud()
+	dstCloud := config.Location{Type: fm.choice("dst_type")}.IsCloud()
+	if fm.get("src_ro").Bool || srcCloud {
 		src += sROBadge.Render(T("READ-ONLY"))
 	} else {
 		src += sErr.Render(T("WARNING: writable source"))
 	}
 	dst := sMuted.Render(T("DESTINATION")) + "\n" + truncLeft(show(loc("dst")), inner) + "\n" +
 		sMuted.Render(trunc(config.ModeLabel(fm.choice("mode")), inner))
-	srcOD := fm.choice("src_type") == config.LocOneDrive
-	dstOD := fm.choice("dst_type") == config.LocOneDrive
 	if fm.get("encrypt").Bool {
-		if srcOD {
+		if srcCloud {
 			src += "  " + sROBadge.Render(T("ENCRYPTED"))
-		} else if dstOD {
+		} else if dstCloud {
 			dst += "  " + sROBadge.Render(T("ENCRYPTED"))
 		}
 	}
 	arrow := lipgloss.NewStyle().Foreground(cAccent).Bold(true).Padding(0, 1).Render("\n──>")
 	row := lipgloss.JoinHorizontal(lipgloss.Top,
-		boxStyle(part == secSource || (part == secCrypt && srcOD)).Width(boxW).Render(src), arrow,
-		boxStyle(part == secDest || part == secCopy || (part == secCrypt && !srcOD)).Width(boxW).Render(dst))
+		boxStyle(part == secSource || (part == secCrypt && srcCloud)).Width(boxW).Render(src), arrow,
+		boxStyle(part == secDest || part == secCopy || (part == secCrypt && !srcCloud)).Width(boxW).Render(dst))
 	modeDesc := config.ModeDescription(fm.choice("mode"))
 	if fm.choice("mode") == config.ModeMirrorArchive && fm.choice("arc_type") != "" {
 		modeDesc = Tf("Like Mirror, but deleted or overwritten files are moved to dated subfolders of %s.", show(loc("arc")))
@@ -721,6 +727,13 @@ func (m *Model) viewBrowser(w int) string {
 		for _, c := range m.conns() {
 			if c.ID == b.loc.ConnectionID {
 				title += sMuted.Render("  " + T("on") + " OneDrive " + c.Name)
+			}
+		}
+	}
+	if b.loc.Type == config.LocS3 {
+		for _, c := range m.conns() {
+			if c.ID == b.loc.ConnectionID {
+				title += sMuted.Render("  " + T("on") + " S3 " + c.Bucket)
 			}
 		}
 	}

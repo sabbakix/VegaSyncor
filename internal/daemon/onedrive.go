@@ -3,13 +3,10 @@ package daemon
 import (
 	"context"
 	"errors"
-	"io"
 	"log/slog"
 	"net/http"
 	"os"
-	"path"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +15,6 @@ import (
 	"vegasyncor/internal/cloud"
 	"vegasyncor/internal/config"
 	"vegasyncor/internal/paths"
-	"vegasyncor/internal/syncer"
 )
 
 // --- sign-in ---
@@ -123,14 +119,8 @@ func (d *Daemon) handleOneDriveFinish(w http.ResponseWriter, r *http.Request) {
 // oneDrive prepares the rclone configuration for the drive of a connection; dest
 // is the destination folder (the base of the encryption when crypt is set).
 // release removes it and stores the token if rclone refreshed it.
-func (d *Daemon) oneDrive(cfg *config.Config, connID, dest string, crypt *cloud.Crypt) (c *cloud.Config, release func(), err error) {
-	cn := cfg.Connection(connID)
-	if cn == nil || !cn.IsOneDrive() {
-		return nil, nil, errors.New(Tf("connection %q not found", connID))
-	}
-	if err := cloud.Available(); err != nil {
-		return nil, nil, err
-	}
+func (d *Daemon) oneDrive(cn *config.Connection, dest string, crypt *cloud.Crypt) (c *cloud.Config, release func(), err error) {
+	connID := cn.ID
 	token, err := d.box.Decrypt(cn.PasswordEnc, cn.ID)
 	if err != nil {
 		return nil, nil, err
@@ -180,153 +170,3 @@ func (d *Daemon) storeToken(connID, token string) {
 		slog.Error("OneDrive: cannot save the refreshed token", "error", err)
 	}
 }
-
-// cryptOf returns the encryption settings of a job (nil if not encrypted).
-func (d *Daemon) cryptOf(j config.Job) (*cloud.Crypt, error) {
-	if !j.Encrypt {
-		return nil, nil
-	}
-	pass, err := d.box.Decrypt(j.CryptPassEnc, config.CryptAAD(j.ID))
-	if err != nil || pass == "" {
-		return nil, errors.New(T("encryption: the password cannot be read (enter it again in the job)"))
-	}
-	return &cloud.Crypt{Password: pass, Names: j.EncryptNames}, nil
-}
-
-// --- runs ---
-
-// syncOneDrive copies src to the OneDrive destination of j; it returns the
-// phase to report when it fails.
-func (d *Daemon) syncOneDrive(ctx context.Context, cfg *config.Config, j config.Job, r *api.Run, src string, lf io.Writer, logf func(string)) (syncer.Result, string, error) {
-	d.setPhase(r, T("connecting to OneDrive"))
-	c, release, err := d.oneDriveOf(cfg, j, j.Dest, logf)
-	if err != nil {
-		return syncer.Result{}, T("destination"), err
-	}
-	defer release()
-
-	var protect []string
-	for _, l := range []*config.Location{j.Archive, j.LogDir} {
-		if l != nil {
-			if rel, ok := cfg.RelPath(*l, j.Dest); ok && rel != "" {
-				protect = append(protect, rel)
-			}
-		}
-	}
-	archive := cloud.Join(c.Root, config.ArchiveDirName)
-	if j.Mode == config.ModeMirrorArchive && j.Archive != nil {
-		archive = c.Abs(j.Archive.Path) // same drive (checked when the job is saved)
-	}
-
-	d.setPhase(r, T("synchronizing"))
-	opts := cloud.Options{
-		Src: src, Dst: c.Root, Mode: j.Mode, Excludes: j.Excludes, DryRun: r.DryRun, BandwidthKBps: j.BandwidthKBps,
-		Checksum: j.Checksum, Protect: protect, RunStamp: r.Start.Format(syncer.StampFormat),
-	}
-	if j.Mode == config.ModeMirrorArchive {
-		opts.Archive = archive
-	}
-	res, err := c.Sync(ctx, opts, lf, func(p syncer.Progress) {
-		d.mu.Lock()
-		r.Progress = &p
-		d.mu.Unlock()
-	})
-	if err != nil {
-		return res, "OneDrive", err
-	}
-	if j.Mode == config.ModeMirrorArchive && !r.DryRun && j.ArchiveDays > 0 {
-		d.setPhase(r, T("cleaning up the archive"))
-		removed, err := c.PruneArchive(ctx, archive, j.ArchiveDays, time.Now())
-		if err != nil {
-			logf(Tf("warning: archive cleanup: %v", err))
-		} else if len(removed) > 0 {
-			logf(Tf("archive: removed %d folders older than %d days", len(removed), j.ArchiveDays))
-		}
-	}
-	return res, "", nil
-}
-
-// oneDriveOf prepares the OneDrive side of a job (source or destination, loc),
-// with the encryption of the job, and writes the encryption mode to the log.
-func (d *Daemon) oneDriveOf(cfg *config.Config, j config.Job, loc config.Location, logf func(string)) (*cloud.Config, func(), error) {
-	crypt, err := d.cryptOf(j)
-	if err != nil {
-		return nil, nil, err
-	}
-	c, release, err := d.oneDrive(cfg, loc.ConnectionID, loc.Path, crypt)
-	if err != nil {
-		return nil, nil, err
-	}
-	if crypt != nil {
-		names := T("contents only")
-		if crypt.Names {
-			names = T("contents and names")
-		}
-		logf(Tf("Encryption:  on (%s)", names))
-	}
-	return c, release, nil
-}
-
-// --- connection test, browsing ---
-
-func (d *Daemon) testOneDrive(ctx context.Context, cfg *config.Config, id string) api.TestResult {
-	c, release, err := d.oneDrive(cfg, id, "", nil)
-	if err != nil {
-		return api.TestResult{OK: false, Message: err.Error()}
-	}
-	defer release()
-	s, err := c.About(ctx)
-	if err != nil {
-		return api.TestResult{OK: false, Message: err.Error()}
-	}
-	return api.TestResult{OK: true, Message: Tf("access granted: %s free of %s", api.HumanBytes(s.Free), api.HumanBytes(s.Total))}
-}
-
-func (d *Daemon) browseOneDrive(ctx context.Context, loc config.Location) (api.BrowseResponse, error) {
-	p, err := config.CleanSubPath(loc.Path)
-	if err != nil {
-		return api.BrowseResponse{}, err
-	}
-	d.mu.Lock()
-	cfg := cloneConfig(d.cfg)
-	d.mu.Unlock()
-	c, release, err := d.oneDrive(cfg, loc.ConnectionID, "", nil)
-	if err != nil {
-		return api.BrowseResponse{}, err
-	}
-	defer release()
-	dirs, err := c.ListDirs(ctx, c.Abs(p))
-	if err != nil {
-		return api.BrowseResponse{}, err
-	}
-	sort.Slice(dirs, func(a, b int) bool { return strings.ToLower(dirs[a]) < strings.ToLower(dirs[b]) })
-	return api.BrowseResponse{Path: p, Dirs: dirs}, nil
-}
-
-func (d *Daemon) mkdirOneDrive(ctx context.Context, loc config.Location, name string) (string, error) {
-	p, err := config.CleanSubPath(loc.Path)
-	if err != nil {
-		return "", err
-	}
-	d.mu.Lock()
-	cfg := cloneConfig(d.cfg)
-	d.mu.Unlock()
-	c, release, err := d.oneDrive(cfg, loc.ConnectionID, "", nil)
-	if err != nil {
-		return "", err
-	}
-	defer release()
-	dirs, err := c.ListDirs(ctx, c.Abs(p))
-	if err != nil {
-		return "", err
-	}
-	for _, x := range dirs {
-		if strings.EqualFold(x, name) {
-			return "", errAlreadyExists
-		}
-	}
-	newPath := strings.TrimPrefix(path.Join(p, name), "/")
-	return newPath, c.Mkdir(ctx, c.Abs(newPath))
-}
-
-var errAlreadyExists = errors.New("exists")

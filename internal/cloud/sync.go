@@ -20,7 +20,7 @@ const (
 	stampFormat    = syncer.StampFormat
 )
 
-// Options of a copy between a local folder and OneDrive (either direction).
+// Options of a copy between a local folder and the cloud (either direction).
 type Options struct {
 	Src           string // rclone path or local folder (already mounted)
 	Dst           string // rclone path or local folder
@@ -69,6 +69,10 @@ type jsonStats struct {
 	Speed        float64 `json:"speed"`
 	ETA          *int64  `json:"eta"`
 	Errors       int64   `json:"errors"`
+	Checks       int64   `json:"checks"`
+	Transfers    int64   `json:"transfers"`
+	Deletes      int64   `json:"deletes"`
+	Renames      int64   `json:"renames"`
 	FatalError   bool    `json:"fatalError"`
 	Transferring []struct {
 		Name string `json:"name"`
@@ -122,8 +126,14 @@ func escapeGlob(p string) string {
 // the changes to log in the rsync itemized form and reporting progress.
 func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgress func(syncer.Progress)) (syncer.Result, error) {
 	args := Args(opts)
+	if c.s3 {
+		// one listing per 1000 files instead of one per folder: S3 bills them
+		args = append(args, "--fast-list", "--low-level-retries", S3CopyRetries, "--retries-sleep", S3RetriesSleep)
+	}
 	fmt.Fprintf(log, "# rclone %s\n", strings.Join(args, " "))
-	cmd := c.command(ctx, args...)
+	runCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	cmd := c.command(runCtx, args...)
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
 		return syncer.Result{}, err
@@ -142,6 +152,11 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 		lastNotify time.Time
 		lastErr    string
 		decryptErr bool // encrypted files that cannot be read: wrong password
+		// the most work done so far, and when it last grew (retrying a file does
+		// not count: its bytes go back and forth)
+		bestWork int64
+		lastWork = time.Now()
+		stalled  bool
 	)
 	add := func(kind, obj string, size int64) *event {
 		e := &event{kind: kind, obj: obj, size: size}
@@ -161,12 +176,21 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 		if json.Unmarshal([]byte(line), &l) != nil {
 			if strings.TrimSpace(line) != "" {
 				fmt.Fprintln(log, line)
-				lastErr = stripStamp(line)
+				if !isContinuation(line) {
+					lastErr = stripStamp(line)
+				}
 			}
 			continue
 		}
 		if l.Stats != nil {
 			last = *l.Stats
+			if work := last.Bytes + last.Checks + last.Transfers + last.Deletes + last.Renames; work > bestWork {
+				bestWork, lastWork = work, time.Now()
+			} else if c.s3 && !stalled && time.Since(lastWork) > S3StallTimeout {
+				stalled = true
+				fmt.Fprintf(log, "ERROR: no progress for %s: copy stopped\n", S3StallTimeout)
+				stop()
+			}
 			if onProgress != nil && time.Since(lastNotify) > 300*time.Millisecond {
 				lastNotify = time.Now()
 				onProgress(progress(last, len(events)))
@@ -174,6 +198,8 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 			continue
 		}
 		obj := l.Object
+		// large downloads: "Multi-thread Copied (new)"
+		l.Msg = strings.TrimPrefix(l.Msg, "Multi-thread ")
 		switch {
 		case l.Msg == "Copied (new)":
 			if backedUp[obj] {
@@ -183,6 +209,11 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 			}
 		case l.Msg == "Copied (replaced existing)":
 			add("update", obj, 0)
+		case l.Msg == "Copied (server-side copy)":
+			// S3 has no move: archiving is this copy and a "Deleted"; only the archive
+			// copies inside the destination in these runs. A later "Copied" means the
+			// file was overwritten, and it replaces the "Deleted"
+			backedUp[obj] = true
 		case l.Msg == "Moved (server-side)" || l.Skipped == "move":
 			backedUp[obj] = true // archived: followed by a copy (update) or "into backup dir" (delete)
 			if l.Skipped == "move" {
@@ -209,7 +240,7 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 			if c.encrypted && isDecryptError(l.Msg) {
 				decryptErr = true
 			}
-			msg := l.Msg
+			msg := firstLine(l.Msg)
 			if obj != "" {
 				msg = obj + ": " + msg
 			}
@@ -259,6 +290,13 @@ func (c *Config) Sync(ctx context.Context, opts Options, log io.Writer, onProgre
 
 	if ctx.Err() != nil {
 		return res, context.Canceled
+	}
+	if stalled {
+		msg := Tf("no progress for %s: copy stopped, the next run continues it", S3StallTimeout)
+		if lastErr != "" {
+			msg += " (" + lastErr + ")"
+		}
+		return res, errors.New(msg)
 	}
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {

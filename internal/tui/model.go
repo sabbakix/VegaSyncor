@@ -127,6 +127,7 @@ type sharesMsg struct {
 	err    error
 }
 type testMsg struct {
+	s3   bool
 	name string
 	res  *api.TestResult
 	err  error
@@ -407,7 +408,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			body = sErr.Render(T("ERROR:") + " " + msg.err.Error())
 		case !msg.res.OK:
 			body = sErr.Render(T("ERROR:") + " " + msg.res.Message)
-			if !strings.Contains(msg.res.Message, "smbclient") {
+			if msg.s3 {
+				body += "\n\n" + sMuted.Render(T("Check the service address, region, bucket and keys."))
+			} else if !strings.Contains(msg.res.Message, "smbclient") {
 				body += "\n\n" + sMuted.Render(T("Check host, user, password and domain."))
 			}
 		default:
@@ -600,11 +603,11 @@ func (m *Model) connsKey(key string) tea.Cmd {
 		m.form, m.formKind, m.formID = newImportForm(), "import", ""
 	case "t":
 		if c != nil {
-			id, name := c.ID, c.Name
+			id, name, s3 := c.ID, c.Name, c.IsS3()
 			m.setFlash(Tf("Testing %s…", name), false)
 			return func() tea.Msg {
 				res, err := m.client.TestConnection(id)
-				return testMsg{name: name, res: res, err: err}
+				return testMsg{s3: s3, name: name, res: res, err: err}
 			}
 		}
 	case "d", "delete":
@@ -691,6 +694,11 @@ func (m *Model) saveForm() tea.Cmd {
 				fm.Err = T("sign in to OneDrive first (Enter on the account)")
 				return nil
 			}
+		} else if in.IsS3() {
+			if m.formID == "" && in.Password == "" {
+				fm.Err = T("S3: enter the secret key")
+				return nil
+			}
 		} else if m.formID == "" && in.Password == "" {
 			fm.Err = T("enter the password")
 			return nil
@@ -727,13 +735,14 @@ func (m *Model) startBrowse(key string) tea.Cmd {
 		}
 	}
 	loc := config.Location{Type: typ, Path: fm.val(key)}
-	if typ == config.LocOneDrive {
-		loc.ConnectionID = fm.choice("dst_odconn")
-		if prefix == "src" {
-			loc.ConnectionID = fm.choice("src_odconn")
-		}
+	if loc.IsCloud() {
+		loc.ConnectionID = cloudConnChoice(fm, prefix, typ)
 		if loc.ConnectionID == "" {
-			fm.Err = T("add a OneDrive connection first (Connections tab)")
+			if typ == config.LocS3 {
+				fm.Err = T("add an S3 connection first (Connections tab)")
+			} else {
+				fm.Err = T("add a OneDrive connection first (Connections tab)")
+			}
 			return nil
 		}
 		loc.Path, _ = config.CleanSubPath(loc.Path)

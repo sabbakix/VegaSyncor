@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -246,18 +247,35 @@ func splitCRLF(data []byte, atEOF bool) (int, []byte, error) {
 	return 0, nil, nil
 }
 
-// IsEmptyDir reports whether a directory has no entries.
+// IsEmptyDir reports whether a directory has no files: folders do not count, at
+// any depth, and neither does the archive folder in its root, which a copy skips.
+// A mirror from such a source would have nothing to copy and would delete the whole
+// destination. A subfolder that cannot be read is skipped: the copy cannot read it
+// either, and folders like "System Volume Information" must not stop a backup.
 func IsEmptyDir(p string) (bool, error) {
-	f, err := os.Open(p)
+	root, err := filepath.EvalSymlinks(p) // the walk does not enter a link
 	if err != nil {
 		return false, err
 	}
-	defer f.Close()
-	_, err = f.Readdirnames(1)
-	if err == io.EOF {
-		return true, nil
+	empty := true
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		switch {
+		case err != nil && path == root:
+			return err
+		case err != nil:
+			return fs.SkipDir
+		case !d.IsDir():
+			empty = false
+			return fs.SkipAll
+		case d.Name() == config.ArchiveDirName && filepath.Dir(path) == root:
+			return fs.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
 	}
-	return false, err
+	return empty, nil
 }
 
 func (o Options) archiveDir() string {
