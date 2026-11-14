@@ -127,8 +127,25 @@ type Result struct {
 func Run(ctx context.Context, o Options, log io.Writer, onProgress func(Progress)) (Result, error) {
 	args := BuildArgs(o)
 	fmt.Fprintf(log, "# rsync %s\n", strings.Join(args, " "))
+	if !o.DryRun {
+		// side log with the sent modification times, checked by fixTimes
+		if f, err := os.CreateTemp("", "vegasyncor-times-*.log"); err == nil {
+			timesLog := f.Name()
+			f.Close()
+			defer func() {
+				if n, err := fixTimes(o.Dst, timesLog); err != nil {
+					fmt.Fprintln(log, Tf("warning: modification times: %v", err))
+				} else if n > 0 {
+					fmt.Fprintln(log, Tf("modification times corrected on %d files (the destination had changed them after the copy)", n))
+				}
+				os.Remove(timesLog)
+			}()
+			n := len(args) // the last two arguments are source and destination
+			args = append(append(args[:n-2:n-2], "--log-file="+timesLog, "--log-file-format="+timesLogFormat), args[n-2:]...)
+		}
+	}
 	cmd := exec.CommandContext(ctx, "rsync", args...)
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	cmd.Env = append(os.Environ(), "LC_ALL=C", "TZ=UTC") // TZ: %M in the side log is in UTC
 	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
 	cmd.WaitDelay = 15 * time.Second
 	stdout, err := cmd.StdoutPipe()
