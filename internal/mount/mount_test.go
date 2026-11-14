@@ -27,3 +27,26 @@ func TestParseCIFSMessages(t *testing.T) {
 		t.Fatalf("parse = %q", got)
 	}
 }
+
+func TestExplainMountErrorHints(t *testing.T) {
+	cases := []struct{ msg, want string }{
+		// real messages from smbclient and mount.cifs
+		{"session setup failed: NT_STATUS_LOGON_FAILURE", "wrong user or password: check user"},
+		{"tree connect failed: NT_STATUS_BAD_NETWORK_NAME", "share does not exist"},
+		{"do_connect: Connection to 192.0.2.1 failed (Error NT_STATUS_IO_TIMEOUT)", "timeout"},
+		{"mount.cifs: permission denied: no match for /run/vegasyncor/mnt/x-src found in /etc/fstab", "not running as root"},
+		{"mount error(13): Permission denied", "wrong user or password, or insufficient"},
+		{"mount error(112): Host is down", "server unreachable"},
+	}
+	for _, c := range cases {
+		// repeated: with the old map the winning hint changed between calls
+		for range 20 {
+			if got := explainMountError(c.msg); !strings.Contains(got, "→ ") || !strings.Contains(got, c.want) {
+				t.Fatalf("explainMountError(%q) = %q, want hint containing %q", c.msg, got, c.want)
+			}
+		}
+	}
+	if got := explainMountError("something unknown"); got != "something unknown" {
+		t.Errorf("unknown message changed: %q", got)
+	}
+}
