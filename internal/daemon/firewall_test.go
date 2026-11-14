@@ -66,9 +66,22 @@ func call(h http.HandlerFunc, method string, body any) *httptest.ResponseRecorde
 	return w
 }
 
+// eventually polls cond until it is true or the timeout expires: the revert
+// timer runs on its own goroutine, so fixed sleeps are flaky on a busy machine.
+func eventually(timeout time.Duration, cond func() bool) bool {
+	for end := time.Now().Add(timeout); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if cond() {
+			return true
+		}
+	}
+	return cond()
+}
+
 func TestFirewallRevertAndConfirm(t *testing.T) {
 	old := ConfirmTimeout
-	ConfirmTimeout = 150 * time.Millisecond
+	// long enough for the PUT handler (which also lists sockets) to return
+	// before the revert fires, even on a loaded machine
+	ConfirmTimeout = time.Second
 	defer func() { ConfirmTimeout = old }()
 	d, fake := newTestDaemon(t)
 
@@ -86,8 +99,7 @@ func TestFirewallRevertAndConfirm(t *testing.T) {
 	if d.cfg.Firewall.Enabled {
 		t.Fatal("unconfirmed settings saved")
 	}
-	time.Sleep(400 * time.Millisecond)
-	if fake.last() != firewallDisable() {
+	if !eventually(5*time.Second, func() bool { return fake.last() == firewallDisable() }) {
 		t.Fatalf("not reverted, last script:\n%s", fake.last())
 	}
 
@@ -96,7 +108,7 @@ func TestFirewallRevertAndConfirm(t *testing.T) {
 	if w := call(d.handleFirewallConfirm, "POST", nil); w.Code != 200 {
 		t.Fatalf("confirm: %d %s", w.Code, w.Body)
 	}
-	time.Sleep(300 * time.Millisecond) // the timer must not fire anymore
+	time.Sleep(ConfirmTimeout + 300*time.Millisecond) // the timer must not fire anymore
 	if strings.Contains(fake.last(), "delete table inet vegasyncor\n") && !strings.Contains(fake.last(), "vs:in-ssh") {
 		t.Fatal("confirmed rules were reverted")
 	}
@@ -109,8 +121,9 @@ func TestFirewallRevertAndConfirm(t *testing.T) {
 	changed := on
 	changed.AdminHosts = []string{"10.9.9.9"}
 	call(d.handleFirewallSet, "PUT", changed)
-	time.Sleep(400 * time.Millisecond)
-	if !strings.Contains(fake.last(), "192.168.1.20") || strings.Contains(fake.last(), "10.9.9.9") {
+	if !eventually(5*time.Second, func() bool {
+		return strings.Contains(fake.last(), "192.168.1.20") && !strings.Contains(fake.last(), "10.9.9.9")
+	}) {
 		t.Fatalf("not reverted to the confirmed rules:\n%s", fake.last())
 	}
 
