@@ -395,7 +395,7 @@ func TestS3FailedUploadDeletesNothing(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			srv, s := newFake(t)
 			srv.Put(testBucket, "Backup/gone.txt", []byte("the only copy"))
-			srv.FailPut = func(key string) bool { return strings.HasSuffix(key, "bad.txt") }
+			srv.SetFailPut(func(key string) bool { return strings.HasSuffix(key, "bad.txt") })
 			src := t.TempDir()
 			write(t, filepath.Join(src, "good.txt"), "ok")
 			write(t, filepath.Join(src, "bad.txt"), "fails")
@@ -415,7 +415,7 @@ func TestS3FailedUploadDeletesNothing(t *testing.T) {
 				t.Error("partial object left")
 			}
 			// the next run, with the service back, completes the job
-			srv.FailPut = nil
+			srv.SetFailPut(nil)
 			if _, err := c.Sync(context.Background(), Options{Src: src, Dst: c.Root, Mode: mode, RunStamp: "2026-10-31_220000"}, io.Discard, nil); err != nil {
 				t.Fatal(err)
 			}
@@ -430,7 +430,7 @@ func TestS3FailedUploadDeletesNothing(t *testing.T) {
 func TestS3FailedOverwriteKeepsOldVersion(t *testing.T) {
 	srv, s := newFake(t)
 	srv.Put(testBucket, "Backup/a.txt", []byte("old"))
-	srv.FailPut = func(key string) bool { return key == "Backup/a.txt" }
+	srv.SetFailPut(func(key string) bool { return key == "Backup/a.txt" })
 	src := t.TempDir()
 	write(t, filepath.Join(src, "a.txt"), "new version")
 	c := s3Config(t, s, "Backup", nil)
@@ -449,7 +449,7 @@ func TestS3FailedListingDeletesNothing(t *testing.T) {
 	srv, s := newFake(t)
 	srv.Put(testBucket, "Backup/a.txt", []byte("in the bucket"))
 	c := s3Config(t, s, "Backup", nil)
-	srv.FailList = true
+	srv.SetFailList(true)
 
 	restore := t.TempDir()
 	write(t, filepath.Join(restore, "local.txt"), "must survive")
@@ -490,7 +490,7 @@ func TestS3RestoreDetectsCorruption(t *testing.T) {
 		t.Errorf("%d multipart uploads left open", srv.PendingUploads())
 	}
 	for _, key := range []string{"Backup/big.bin", "Backup/deep/er/and/deeper/file.txt"} {
-		srv.Get(testBucket, key).Data[3] ^= 0xff
+		srv.FlipByte(testBucket, key, 3)
 		restore := t.TempDir()
 		var log bytes.Buffer
 		res, err := c.Sync(context.Background(), Options{Src: c.Root, Dst: restore, Mode: config.ModeMirror}, &log, nil)
@@ -503,7 +503,7 @@ func TestS3RestoreDetectsCorruption(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(restore, strings.TrimPrefix(key, "Backup/"))); err == nil {
 			t.Errorf("%s: the damaged file was written", key)
 		}
-		srv.Get(testBucket, key).Data[3] ^= 0xff
+		srv.FlipByte(testBucket, key, 3)
 	}
 }
 
@@ -738,7 +738,7 @@ func TestS3StallStops(t *testing.T) {
 	srv.Put(testBucket, "Backup/gone.txt", []byte("still needed"))
 	h := make(chan struct{})
 	defer close(h)
-	srv.Hang = h
+	srv.SetHang(h)
 	src := t.TempDir()
 	write(t, filepath.Join(src, "a.txt"), "x")
 	c := s3Config(t, s, "Backup", nil)

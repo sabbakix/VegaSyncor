@@ -264,7 +264,7 @@ func TestS3BadConnection(t *testing.T) {
 func TestS3PartialFailureReported(t *testing.T) {
 	d, srv := s3Daemon(t)
 	srv.Put("backups", "Backup/gone.txt", []byte("only copy"))
-	srv.FailPut = func(k string) bool { return strings.HasSuffix(k, "bad.txt") }
+	srv.SetFailPut(func(k string) bool { return strings.HasSuffix(k, "bad.txt") })
 	src := t.TempDir()
 	put(t, src+"/good.txt", "ok")
 	put(t, src+"/bad.txt", "ko")

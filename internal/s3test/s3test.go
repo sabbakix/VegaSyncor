@@ -51,12 +51,44 @@ type Server struct {
 	uploads  map[string]*multipart
 	nextID   int
 	requests []string // "METHOD bucket/key?query"
-	// FailPut, if set, makes the upload of the keys it accepts fail with a 500.
-	FailPut func(key string) bool
-	// FailList, if set, makes every listing fail with a 500.
-	FailList bool
-	// Hang, if set, is closed to release the requests kept waiting: no answer until then.
-	Hang chan struct{}
+	// Set with SetFailPut, SetFailList and SetHang: a request still in progress
+	// from an earlier run may read them at the same time.
+	putFails func(key string) bool
+	failList bool
+	hangCh   chan struct{}
+}
+
+// SetFailPut makes the upload of the keys f accepts fail with a 500 (nil: none fail).
+func (s *Server) SetFailPut(f func(key string) bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.putFails = f
+}
+
+// SetFailList makes every listing fail with a 500.
+func (s *Server) SetFailList(fail bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failList = fail
+}
+
+// SetHang keeps the uploads waiting without an answer until h is closed (nil: no wait).
+func (s *Server) SetHang(h chan struct{}) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.hangCh = h
+}
+
+// FlipByte damages an object by inverting byte i, as a disk or a provider could.
+// The object is replaced, not changed in place: a download in progress keeps
+// the bytes it started with.
+func (s *Server) FlipByte(bucket, key string, i int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	o := *s.buckets[bucket][key]
+	o.Data = append([]byte(nil), o.Data...)
+	o.Data[i] ^= 0xff
+	s.buckets[bucket][key] = &o
 }
 
 // New starts a server with the given credentials and empty buckets.
@@ -207,7 +239,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) hang() chan struct{} {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.Hang
+	return s.hangCh
 }
 
 func metaOf(r *http.Request) map[string]string {
@@ -221,7 +253,7 @@ func metaOf(r *http.Request) map[string]string {
 }
 
 func (s *Server) failPut(w http.ResponseWriter, key string) bool {
-	if s.FailPut != nil && s.FailPut(key) {
+	if s.putFails != nil && s.putFails(key) {
 		xmlError(w, 500, "InternalError", "upload broken by the test")
 		return true
 	}
@@ -393,7 +425,7 @@ func (s *Server) deleteMany(w http.ResponseWriter, r *http.Request, objects map[
 
 // list answers ListObjects (v1 and v2), with prefix, delimiter and paging.
 func (s *Server) list(w http.ResponseWriter, q url.Values, objects map[string]*Object) {
-	if s.FailList {
+	if s.failList {
 		xmlError(w, 500, "InternalError", "listing broken by the test")
 		return
 	}
