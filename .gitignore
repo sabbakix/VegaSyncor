@@ -1,2 +1,5 @@
 /bin/
 /dist/
+
+# local secrets (test server credentials, see .env.example)
+.env

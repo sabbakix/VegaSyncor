@@ -139,23 +139,39 @@ func parseCIFSMessages(out string, since float64) string {
 	return strings.Join(msgs, "; ")
 }
 
-// explainMountError adds a hint to the most common mount.cifs errors.
+// explainMountError adds a hint to the most common mount.cifs and smbclient
+// errors. The first matching entry wins, so more specific texts come first.
 func explainMountError(msg string) string {
-	hints := map[string]string{
-		"Permission denied":         T("wrong user or password, or insufficient permissions on the share"),
-		"Operation not permitted":   epermHint(),
-		"No such file or directory": T("share does not exist or wrong path"),
-		"Host is down":              T("server unreachable or SMB version not supported (try setting it)"),
-		"could not resolve address": T("host name cannot be resolved: try the IP address"),
-		"Operation not supported":   T("SMB version not supported by the server: set it explicitly"),
-		"No route to host":          T("server unreachable on the network"),
-		"Connection refused":        T("the server does not accept SMB connections (port 445)"),
-		"Operation now in progress": T("server unreachable (timeout)"),
-		"wrong fs type":             T("the cifs-utils package is missing (apt install cifs-utils)"),
+	hints := []struct{ key, hint string }{
+		// mount.cifs run by a normal user (the service is not running as root)
+		{"found in /etc/fstab", T("the service is not running as root (start it with systemctl start vegasyncor)")},
+		// smbclient (connection test, list of shares)
+		{"NT_STATUS_LOGON_FAILURE", T("wrong user or password: check user, password and domain (leave the domain empty for a local Windows user)")},
+		{"NT_STATUS_ACCOUNT_LOCKED_OUT", T("the account is locked or disabled on the server")},
+		{"NT_STATUS_ACCOUNT_DISABLED", T("the account is locked or disabled on the server")},
+		{"NT_STATUS_PASSWORD_EXPIRED", T("the password has expired: change it on the server")},
+		{"NT_STATUS_PASSWORD_MUST_CHANGE", T("the password has expired: change it on the server")},
+		{"NT_STATUS_ACCESS_DENIED", T("wrong user or password, or insufficient permissions on the share")},
+		{"NT_STATUS_BAD_NETWORK_NAME", T("share does not exist or wrong path")},
+		{"NT_STATUS_IO_TIMEOUT", T("server unreachable (timeout)")},
+		{"NT_STATUS_HOST_UNREACHABLE", T("server unreachable on the network")},
+		{"NT_STATUS_NETWORK_UNREACHABLE", T("server unreachable on the network")},
+		{"NT_STATUS_CONNECTION_REFUSED", T("the server does not accept SMB connections (port 445)")},
+		// mount.cifs
+		{"Permission denied", T("wrong user or password, or insufficient permissions on the share")},
+		{"Operation not permitted", epermHint()},
+		{"No such file or directory", T("share does not exist or wrong path")},
+		{"Host is down", T("server unreachable or SMB version not supported (try setting it)")},
+		{"could not resolve address", T("host name cannot be resolved: try the IP address")},
+		{"Operation not supported", T("SMB version not supported by the server: set it explicitly")},
+		{"No route to host", T("server unreachable on the network")},
+		{"Connection refused", T("the server does not accept SMB connections (port 445)")},
+		{"Operation now in progress", T("server unreachable (timeout)")},
+		{"wrong fs type", T("the cifs-utils package is missing (apt install cifs-utils)")},
 	}
-	for k, h := range hints {
-		if h != "" && strings.Contains(msg, k) {
-			return msg + " → " + h
+	for _, h := range hints {
+		if h.hint != "" && strings.Contains(msg, h.key) {
+			return msg + " → " + h.hint
 		}
 	}
 	return msg
