@@ -48,7 +48,7 @@ lxc file push "$DEB" "$CT/root/vegasyncor.deb"
 lxc file push --mode 0700 test/e2e/e2e.sh "$CT/root/e2e.sh"
 
 echo "→ installing $(basename "$DEB") in $CT (clean configuration)"
-lxc exec "$CT" -- bash -c 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --reinstall /root/vegasyncor.deb >/dev/null 2>&1 &&
+lxc exec "$CT" -- bash -c 'DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --reinstall --allow-downgrades /root/vegasyncor.deb >/dev/null 2>&1 &&
   systemctl stop vegasyncor && rm -rf /etc/vegasyncor/config.json /var/lib/vegasyncor/* &&
   systemctl start vegasyncor && vegasyncor version'
 

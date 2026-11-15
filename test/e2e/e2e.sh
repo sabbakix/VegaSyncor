@@ -93,7 +93,7 @@ check "two.txt kept in .vegasyncor-archive" \
 smb "$SB" "mkdir vs-test-guard; cd vs-test-guard; lcd $WORK/fix; put one.txt" >/dev/null
 job Guard "$(loc "$SA" vs-test-empty)" "$(loc "$SB" vs-test-guard)" mirror
 RG=$(runjob Guard); info "guard:   $RG"
-check "empty source blocks the mirror" "echo '$RG' | grep -q 'source is empty'"
+check "empty source blocks the mirror" "echo '$RG' | grep -q 'source has no files'"
 check "backup in destination not wiped" "exists $SB vs-test-guard/one.txt"
 
 # --- wrong password: clear error, no hang
