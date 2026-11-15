@@ -337,6 +337,9 @@ func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if c.IsS3() {
+		in.Password = strings.TrimSpace(in.Password) // pasted keys often bring a newline
+	}
 	if in.Password != "" {
 		if strings.ContainsAny(in.Password, "\r\n") {
 			fail(w, 400, errors.New(T("the password cannot contain line breaks")))
@@ -348,6 +351,10 @@ func (d *Daemon) handleSaveConn(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		c.PasswordEnc = enc
+	}
+	if c.IsS3() && c.PasswordEnc == "" {
+		fail(w, 400, errors.New(T("S3: enter the secret key")))
+		return
 	}
 	if existing != nil {
 		*existing = c
@@ -398,10 +405,14 @@ func (d *Daemon) handleTestConn(w http.ResponseWriter, r *http.Request) {
 		fail(w, 404, errors.New(T("connection not found")))
 		return
 	}
-	if cfg.Connection(id).IsOneDrive() {
+	if !cfg.Connection(id).IsSMB() {
 		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
-		reply(w, d.testOneDrive(ctx, cfg, id))
+		if cfg.Connection(id).IsS3() {
+			reply(w, d.testS3(ctx, cfg, id))
+		} else {
+			reply(w, d.testOneDrive(ctx, cfg, id))
+		}
 		return
 	}
 	t, err := d.smbTarget(cfg, config.Location{Type: config.LocSMB, ConnectionID: id})
@@ -465,8 +476,8 @@ func (d *Daemon) handleBrowse(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	if in.Location.Type == config.LocOneDrive {
-		resp, err := d.browseOneDrive(ctx, in.Location)
+	if in.Location.IsCloud() {
+		resp, err := d.browseCloud(ctx, in.Location)
 		if err != nil {
 			fail(w, 400, err)
 			return
@@ -515,8 +526,8 @@ func (d *Daemon) handleMkdir(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 	defer cancel()
-	if in.Location.Type == config.LocOneDrive {
-		p, err := d.mkdirOneDrive(ctx, in.Location, name)
+	if in.Location.IsCloud() {
+		p, err := d.mkdirCloud(ctx, in.Location, name)
 		switch {
 		case errors.Is(err, errAlreadyExists):
 			fail(w, 409, errors.New(T("a folder with this name already exists")))

@@ -173,3 +173,73 @@ func TestCustomArchiveAndProtect(t *testing.T) {
 		t.Error("protected folder deleted by the mirror")
 	}
 }
+
+// Only files make a source non-empty: a share whose folders are all empty has
+// nothing to copy, and a mirror from it would wipe the backup.
+func TestIsEmptyDir(t *testing.T) {
+	root := t.TempDir()
+	check := func(what string, want bool) {
+		t.Helper()
+		if got, err := IsEmptyDir(root); err != nil || got != want {
+			t.Errorf("%s: IsEmptyDir = %v, %v (want %v)", what, got, err, want)
+		}
+	}
+	check("no entries", true)
+	if err := os.MkdirAll(filepath.Join(root, "a", "b", "c"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	check("only empty folders", true)
+	archived := filepath.Join(root, config.ArchiveDirName, "2026-10-30_220000", "old.txt")
+	os.MkdirAll(filepath.Dir(archived), 0o755)
+	os.WriteFile(archived, []byte("x"), 0o644)
+	check("only the archive folder", true)
+	// an archive folder deeper down is an ordinary folder of the source, as for the copy
+	deep := filepath.Join(root, "a", config.ArchiveDirName, "f.txt")
+	os.MkdirAll(filepath.Dir(deep), 0o755)
+	os.WriteFile(deep, []byte("x"), 0o644)
+	check("file in a deeper folder of that name", false)
+	os.Remove(deep)
+	check("empty again", true)
+	os.WriteFile(filepath.Join(root, "a", "b", "c", "f.txt"), nil, 0o644)
+	check("a file deep down, even of size 0", false)
+	os.Remove(filepath.Join(root, "a", "b", "c", "f.txt"))
+	if err := os.Symlink("/nonexistent", filepath.Join(root, "a", "link")); err != nil {
+		t.Fatal(err)
+	}
+	check("a symbolic link is content", false)
+	// the source itself can be a link to a folder
+	link := filepath.Join(t.TempDir(), "source")
+	os.Symlink(root, link)
+	if got, err := IsEmptyDir(link); err != nil || got {
+		t.Errorf("through a link: %v, %v", got, err)
+	}
+	os.Remove(filepath.Join(root, "a", "link"))
+	if got, err := IsEmptyDir(link); err != nil || !got {
+		t.Errorf("through a link, no files: %v, %v", got, err)
+	}
+	if _, err := IsEmptyDir(filepath.Join(root, "missing")); err == nil {
+		t.Error("a missing folder must be an error")
+	}
+}
+
+// A folder that cannot be read (System Volume Information on many shares) neither
+// stops the check when there are files, nor counts as content when there are none:
+// the copy could not read it either.
+func TestIsEmptyDirUnreadableFolder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	root := t.TempDir()
+	locked := filepath.Join(root, "A locked")
+	os.MkdirAll(locked, 0o755)
+	os.WriteFile(filepath.Join(locked, "secret.txt"), []byte("x"), 0o644)
+	os.Chmod(locked, 0)
+	t.Cleanup(func() { os.Chmod(locked, 0o755) })
+	if got, err := IsEmptyDir(root); err != nil || !got {
+		t.Errorf("only an unreadable folder: %v, %v", got, err)
+	}
+	os.WriteFile(filepath.Join(root, "z.txt"), []byte("x"), 0o644)
+	if got, err := IsEmptyDir(root); err != nil || got {
+		t.Errorf("with a file besides it: %v, %v", got, err)
+	}
+}

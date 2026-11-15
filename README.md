@@ -30,8 +30,8 @@ the clock (or the `L` key).
   on specific days of the week, cron expression, or manual only. The server clock and time zone are
   always visible in the TUI.
 - **Dry run**: shows what would be copied and deleted without touching anything.
-- **Empty-source protection**: if the source turns out empty (e.g. emptied share or failed mount) a
-  mirror is blocked, so the backup is not wiped.
+- **Empty-source protection**: if the source has no files (e.g. emptied share or failed mount; folders
+  without files do not count) a mirror is blocked, so the backup is not wiped.
 - Incremental copy with `rsync` (differences only), bandwidth limit, exclusions, optional content
   comparison (checksum), history and detailed log of every run.
 - **Mouse support** in the TUI (tabs, commands, lists, form fields), alongside the keyboard.
@@ -40,8 +40,9 @@ the clock (or the `L` key).
   with automatic rollback if a change is not confirmed.
 - **Export / import** of the whole configuration (connections with their passwords, syncs,
   settings) as a password-protected encrypted file, to move the service to a new server.
-- **Off-site copy to OneDrive** (Personal or Microsoft 365 / Business) as destination, with the same
-  modes, archive, dry run and logs, and optional **client-side encryption**.
+- **Off-site copy to OneDrive** (Personal or Microsoft 365 / Business) **or S3** (Amazon S3 and
+  S3-compatible services) as destination, with the same modes, archive, dry run and logs, and optional
+  **client-side encryption**.
 
 ## Screenshots
 
@@ -60,7 +61,7 @@ destination folder can be created on the spot (`n`).
 
 ![Log of a dry run with new, updated and deleted files](docs/screenshots/05-dry-run.png)
 
-**Connections**: saved, encrypted credentials (and OneDrive accounts), reusable by several jobs.
+**Connections**: saved, encrypted credentials (and OneDrive accounts and S3 buckets), reusable by several jobs.
 
 ![List of saved SMB connections](docs/screenshots/04-connections.png)
 
@@ -208,7 +209,8 @@ Press `e` to enable the **lockdown**:
 - incoming: only **SSH from the admin hosts** (IP addresses or networks; empty = any host) and
   replies to connections started by the server; optionally ping;
 - outgoing: **SMB only to the hosts of the connections**, plus DNS, NTP, DHCP and, optionally, web
-  (HTTP/HTTPS) for updates; with OneDrive connections also HTTPS (port 443) to any host;
+  (HTTP/HTTPS) for updates; with OneDrive or S3 connections also HTTPS (port 443) to any host, and an S3 server on another port
+  gets a rule for its address and port only;
 - everything else is blocked and logged (`journalctl -k | grep vegasyncor`).
 
 On a port or a connection, `enter` (or `a`) creates an allow/block rule pre-filled from it; your rules
@@ -266,13 +268,63 @@ check it) into a local or network folder; it cannot be on both sides. The copy i
   folder as *Destination*; for an encrypted copy turn on *Encrypted copy* with the **same password
   and the same *Encrypt names too*** used for the upload. A wrong password stops the run without
   writing anything ("the files cannot be decrypted"). The empty-source protection also applies: a
-  missing or empty OneDrive folder never wipes the local copy. The OneDrive side is never changed.
+  OneDrive folder that is missing or has no files never wipes the local copy. The OneDrive side is never changed.
 - **Sign-in**: the token is stored encrypted like the passwords and refreshed automatically by
   every copy. Microsoft revokes it after about 90 days without use, or when the account password
   changes: then edit the connection and sign in again. The sign-in uses rclone's public app ID; no
   setup in Azure / Entra ID is needed.
 - **Firewall**: with OneDrive connections the lockdown also allows outgoing HTTPS (port 443), to any
   host because Microsoft's addresses change.
+
+## Off-site copy to S3
+
+A sync can also copy to, and restore from, an **S3 bucket**: Amazon S3 or an S3-compatible service
+(Backblaze B2, Wasabi, Cloudflare R2, MinIO...). It uses rclone like OneDrive, so modes, archive,
+dry run, logs, filters and encryption work the same way.
+
+1. Create the bucket and an access key with the provider. VegaSyncor **never creates a bucket**: a
+   mistyped name stops the copy instead of sending the backup to a new bucket. The key must be able
+   to list, read, write and delete in the bucket.
+2. Tab **2 Connections**, `n`, *Type*: **S3 bucket**. Leave *Service address* empty for Amazon S3
+   (then *Region* is required), otherwise enter the address of the service. Over the Internet use
+   `https://`: with `http://` the files travel unprotected unless *Encrypted copy* is on, and even
+   then their size and timing are visible. `t` checks that the bucket can be read; writing is
+   checked by the first copy, because a test should not write into a bucket holding backups.
+3. Tab **1 Syncs**, `n`: in *Destination* choose *S3 bucket (off-site copy)*, the connection and a
+   folder.
+
+What is different from the other destinations:
+
+- **A mirror needs a folder in the bucket**: it deletes everything else where it copies, so the
+  root of a bucket is accepted only by *Add only*.
+- **Folders do not exist on S3** until they contain a file. A new folder appears after the first
+  copy, and **empty folders of the source are not kept**: a restore does not bring them back.
+- **Restore** (S3 as source) stops with an error if there are no files in the folder, in every mode:
+  on S3 a mistyped path and an empty folder look the same, so *Allow empty source* does not apply.
+- **The archive** (*Mirror + archive*) must be in the same bucket. Each archived file is a server-side
+  copy and a delete, and archived versions are billed as storage until they are cleaned up.
+- **Costs**: besides storage and download, providers bill requests. Every run lists the destination
+  and reads the date of every file with the same size (one request per file): roughly 40 cents
+  per million files at Amazon's usual prices, and it takes time. *Compare contents* does not download anything
+  from the bucket for files uploaded by VegaSyncor, but reads all the local files.
+- **Unfinished uploads**: a large upload interrupted abruptly can leave parts that some providers
+  keep billing. Add a lifecycle rule to the bucket to abort incomplete multipart uploads after a few
+  days.
+- **Cold storage** (e.g. Glacier classes) is not handled: restoring those files fails with an error
+  until they are brought back with the tools of the provider.
+- **Protection against a stolen key or ransomware**: a key that can write can also delete. For
+  important data turn on bucket versioning or Object Lock with the provider, which VegaSyncor does
+  not manage.
+
+What protects the copy: failed uploads or listings stop all deletions of that run; hashes are checked
+on upload and on download, so a file damaged in the bucket is reported and not restored; the secret
+key is stored encrypted like the passwords and is included in the configuration exports.
+
+If the service stops answering, a copy retries for a few minutes to get over a network problem, then
+ends with an error; a run with no progress at all for 30 minutes is stopped. Nothing is lost: the next
+run continues from what is already in the bucket, apart from the large file that was being uploaded.
+
+**Try a restore** into an empty folder after the first backup, before relying on it.
 
 ## Moving to a new server (export / import)
 
@@ -421,6 +473,16 @@ With `VEGASYNCOR_DEV_ONEDRIVE_ROOT=/tmp/vs/onedrive` OneDrive is simulated too (
 paste any address containing `code=`), with rclone copying to local folders. The rclone tests use
 `VEGASYNCOR_TEST_RCLONE=/path/to/rclone go test ./internal/cloud` (skipped without rclone).
 
+The S3 tests use a small server inside the tests (`internal/s3test`: it verifies signatures and
+checksums, and can break uploads on purpose). The tests that do not need to break anything can run
+against a real service, in a bucket for tests only (they work in a new `vegasyncor-test-*` folder and
+remove it at the end):
+
+```bash
+VEGASYNCOR_TEST_S3_BUCKET=... VEGASYNCOR_TEST_S3_ACCESS_KEY=... VEGASYNCOR_TEST_S3_SECRET_KEY=... \
+VEGASYNCOR_TEST_S3_REGION=... VEGASYNCOR_TEST_S3_ENDPOINT=... go test -count=1 ./internal/cloud -run 'TestS3(UploadRestoreIdentical|Modes|Checksum|MissingFolderLooksEmpty|WrongPassword|EncryptedArchive|EmptyFoldersAreNotContent)'
+```
+
 The firewall rules can be loaded into a real kernel in a throw-away user+network namespace (no
 effect on the machine): `VEGASYNCOR_TEST_NFT=nft go test ./internal/firewall`.
 
@@ -451,5 +513,6 @@ The README screenshots are made from the real TUI with demo data: see
 | `internal/transfer` | encrypted export files (Argon2id + AES-256-GCM), import into a new server |
 | `internal/mount` | CIFS mounts / read-only binds, share listing, environment checks |
 | `internal/syncer` | rsync execution, progress, archive |
-| `internal/cloud` | OneDrive with rclone: sign-in, sync, encryption, browsing |
+| `internal/cloud` | OneDrive and S3 with rclone: sign-in, sync, encryption, browsing |
+| `internal/s3test` | S3 server for the tests |
 | `internal/firewall` | nftables rules (lockdown preset), counters, open ports and connections (`ss`) |

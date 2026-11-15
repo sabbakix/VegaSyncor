@@ -23,7 +23,7 @@ func sampleFirewall() config.Firewall {
 }
 
 func TestScript(t *testing.T) {
-	s := Script(Plan(sampleFirewall(), []string{"192.168.1.30", "192.168.1.31"}, false))
+	s := Script(Plan(sampleFirewall(), []string{"192.168.1.30", "192.168.1.31"}, false, nil))
 	for _, want := range []string{
 		"table inet vegasyncor\ndelete table inet vegasyncor\n",
 		"type filter hook input priority filter; policy drop;",
@@ -54,7 +54,7 @@ func TestScript(t *testing.T) {
 func TestScriptOptions(t *testing.T) {
 	f := config.DefaultFirewall()
 	f.AllowWeb, f.AllowPing = false, false
-	s := Script(Plan(f, nil, true))
+	s := Script(Plan(f, nil, true, nil))
 	if strings.Contains(s, "vs:out-web") || strings.Contains(s, "vs:in-ping") || strings.Contains(s, "vs:out-smb") {
 		t.Errorf("disabled options still present:\n%s", s)
 	}
@@ -96,7 +96,8 @@ func TestScriptLoads(t *testing.T) {
 		t.Skip("set VEGASYNCOR_TEST_NFT to the nft command to run this test")
 	}
 	f := filepath.Join(t.TempDir(), "rules.nft")
-	script := Script(Plan(sampleFirewall(), []string{"192.168.1.30", "fd00::30"}, false))
+	script := Script(Plan(sampleFirewall(), []string{"192.168.1.30", "fd00::30"}, false,
+		[]Endpoint{{Port: "9000", Hosts: []string{"192.168.1.50", "fd00::50"}}}))
 	if err := os.WriteFile(f, []byte(script), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -150,15 +151,38 @@ func TestCloudRule(t *testing.T) {
 		}
 		return nil
 	}
-	if find(Plan(f, nil, false)) != nil {
+	if find(Plan(f, nil, false, nil)) != nil {
 		t.Error("cloud rule without OneDrive connections")
 	}
-	r := find(Plan(f, nil, true))
+	r := find(Plan(f, nil, true, nil))
 	if r == nil || r.Direction != "out" || strings.Join(r.Ports, ",") != "443" || len(r.Hosts) != 0 {
 		t.Errorf("cloud rule = %+v", r)
 	}
 	f.AllowWeb = true
-	if find(Plan(f, nil, true)) != nil {
+	if find(Plan(f, nil, true, nil)) != nil {
 		t.Error("cloud rule duplicated with web allowed")
+	}
+}
+
+// An S3 server on its own port gets a rule for its addresses only.
+func TestS3Rule(t *testing.T) {
+	rules := Plan(sampleFirewall(), nil, false, []Endpoint{{Port: "9000", Hosts: []string{"192.168.1.50", "fd00::50"}}})
+	var r *Rule
+	for i := range rules {
+		if rules[i].Kind == KindS3 {
+			r = &rules[i]
+		}
+	}
+	if r == nil || r.ID != "out-s3-9000" || r.Direction != "out" || r.Action != "allow" {
+		t.Fatalf("rule = %+v", r)
+	}
+	s := Script(rules)
+	for _, want := range []string{`ip daddr 192.168.1.50 tcp dport 9000 counter accept comment "vs:out-s3-9000"`, `ip6 daddr fd00::50 tcp dport 9000`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("missing %q in\n%s", want, s)
+		}
+	}
+	if strings.Index(s, "out-s3-9000") > strings.Index(s, "out-drop") {
+		t.Error("rule after the final drop")
 	}
 }

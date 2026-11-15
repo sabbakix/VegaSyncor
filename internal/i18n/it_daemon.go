@@ -27,7 +27,7 @@ func init() {
 		"warning: unmounting source: %v": "attenzione: smontaggio sorgente: %v",
 		"the folder %s does not exist in the share": "la cartella %s non esiste nella condivisione",
 		"safety check": "controllo sicurezza",
-		"the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)": "la sorgente è vuota: mirror bloccato per non svuotare la destinazione (abilitare 'Consenti sorgente vuota' se voluto)",
+		"the source has no files: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)": "la sorgente non contiene file: mirror bloccato per non svuotare la destinazione (abilitare 'Consenti sorgente vuota' se voluto)",
 		"connecting to destination":                      "connessione destinazione",
 		"warning: unmounting destination: %v":            "attenzione: smontaggio destinazione: %v",
 		"synchronizing":                                  "sincronizzazione",

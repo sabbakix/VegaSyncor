@@ -27,7 +27,8 @@ const (
 	KindDNS         = "dns"
 	KindNTP         = "ntp"
 	KindWeb         = "web"
-	KindCloud       = "cloud" // OneDrive: HTTPS to Microsoft (addresses change, so any host)
+	KindCloud       = "cloud" // OneDrive, S3: HTTPS (addresses change, so any host)
+	KindS3          = "s3"    // S3-compatible server on its own host and port
 	KindSMB         = "smb"
 	KindUser        = "user"
 	KindDrop        = "drop"
@@ -48,9 +49,17 @@ type Rule struct {
 	Bytes     uint64   `json:"bytes"`
 }
 
+// Endpoint is an S3 server not reachable through the HTTPS rule: a TCP port and
+// the IP addresses of the hosts listening on it.
+type Endpoint struct {
+	Port  string
+	Hosts []string
+}
+
 // Plan returns the rules of the lockdown preset for f. smbHosts are the IP
-// addresses of the hosts in the connections (resolved by the caller).
-func Plan(f config.Firewall, smbHosts []string, cloud bool) []Rule {
+// addresses of the hosts in the connections (resolved by the caller); cloud allows
+// HTTPS to any host; s3 are the S3 servers on other ports.
+func Plan(f config.Firewall, smbHosts []string, cloud bool, s3 []Endpoint) []Rule {
 	var in, out []Rule
 	b := func(id, kind, dir, action, proto string, ports, hosts []string) Rule {
 		return Rule{ID: id, Kind: kind, Builtin: true, Direction: dir, Action: action, Proto: proto, Ports: ports, Hosts: hosts}
@@ -115,6 +124,9 @@ func Plan(f config.Firewall, smbHosts []string, cloud bool) []Rule {
 	}
 	if len(smbHosts) > 0 {
 		out = append(out, b("out-smb", KindSMB, config.FwOut, config.FwAllow, config.FwTCP, []string{"139", "445"}, smbHosts))
+	}
+	for _, e := range s3 {
+		out = append(out, b("out-s3-"+e.Port, KindS3, config.FwOut, config.FwAllow, config.FwTCP, []string{e.Port}, e.Hosts))
 	}
 	out = append(out, user(config.FwOut, config.FwAllow)...)
 	out = append(out, b("out-drop", KindDrop, config.FwOut, config.FwBlock, "", nil, nil))

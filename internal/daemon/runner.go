@@ -170,10 +170,11 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 	}
 
 	var src string
-	var srcCloud *cloud.Config // OneDrive source: rclone downloads from it
-	if j.Source.Type == config.LocOneDrive {
-		d.setPhase(r, T("connecting to OneDrive"))
-		c, release, err := d.oneDriveOf(cfg, j, j.Source, logf)
+	var srcCloud *cloud.Config // cloud source: rclone downloads from it
+	if j.Source.IsCloud() {
+		name := cloudName(j.Source.Type)
+		d.setPhase(r, Tf("connecting to %s", name))
+		c, release, err := d.cloudOf(cfg, j, j.Source, logf)
 		if err != nil {
 			return fail(T("source"), err)
 		}
@@ -181,19 +182,25 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 		srcCloud, src = c, c.Root
 		empty, err := c.IsEmpty(ctx, c.Raw)
 		switch {
+		case err != nil && j.Source.Type == config.LocS3:
+			return fail(T("source"), s3AccessError(cfg, j.Source.ConnectionID, err))
 		case err != nil && strings.Contains(err.Error(), "directory not found"):
-			return fail(T("source"), errors.New(Tf("the folder %s does not exist on OneDrive", "/"+j.Source.Path)))
+			return fail(T("source"), errors.New(Tf("the folder %s does not exist on %s", "/"+j.Source.Path, name)))
 		case err != nil:
-			return fail(T("source"), errors.New(Tf("the folder %s cannot be read on OneDrive: %v", "/"+j.Source.Path, err)))
+			return fail(T("source"), errors.New(Tf("the folder %s cannot be read on %s: %v", "/"+j.Source.Path, name, err)))
+		case empty && j.Source.Type == config.LocS3:
+			// a mistyped path looks like this too: stop in every mode, also "Add only",
+			// which would otherwise report a success that restored nothing
+			return fail(T("source"), errors.New(Tf("no files found in %s: check the bucket and the folder", j.Source.Display(cfg))))
 		}
 		if !empty && j.Encrypt {
 			// files there, but nothing can be decrypted: wrong password or names setting
 			if dec, err := c.IsEmpty(ctx, c.Root); err == nil && dec {
-				return fail(T("source"), errors.New(T("the OneDrive folder is not empty but nothing can be decrypted: check the password and 'Encrypt names too' (they must be the same as when the copy was made)")))
+				return fail(T("source"), errors.New(T("the cloud folder is not empty but nothing can be decrypted: check the password and 'Encrypt names too' (they must be the same as when the copy was made)")))
 			}
 		}
 		if empty && j.Mode != config.ModeAdditive && !j.AllowEmptySource {
-			return fail(T("safety check"), errors.New(T("the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
+			return fail(T("safety check"), errors.New(T("the source has no files: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
 		}
 	} else {
 		d.setPhase(r, T("connecting to source"))
@@ -215,13 +222,13 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 			if empty, err := syncer.IsEmptyDir(src); err != nil {
 				return fail(T("source"), err)
 			} else if empty {
-				return fail(T("safety check"), errors.New(T("the source is empty: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
+				return fail(T("safety check"), errors.New(T("the source has no files: mirror blocked so the destination is not wiped (enable 'Allow empty source' if intended)")))
 			}
 		}
 	}
 
-	if j.Dest.Type == config.LocOneDrive {
-		res, phase, err := d.syncOneDrive(ctx, cfg, j, r, src, lf, logf)
+	if j.Dest.IsCloud() {
+		res, phase, err := d.syncCloud(ctx, cfg, j, r, src, lf, logf)
 		d.mu.Lock()
 		r.Stats = res.Stats
 		d.mu.Unlock()
@@ -303,7 +310,7 @@ func (d *Daemon) doExecute(ctx context.Context, cfg *config.Config, j config.Job
 	engine := "rsync"
 	var res syncer.Result
 	if srcCloud != nil {
-		engine = "OneDrive"
+		engine = cloudName(j.Source.Type)
 		copts := cloud.Options{Src: src, Dst: dst, Mode: j.Mode, Excludes: j.Excludes, DryRun: r.DryRun,
 			BandwidthKBps: j.BandwidthKBps, Checksum: j.Checksum, Protect: protect, RunStamp: opts.RunStamp}
 		if j.Mode == config.ModeMirrorArchive {

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -56,19 +57,30 @@ func (d *Daemon) fwAvailable() bool {
 
 // --- addresses of the connection hosts ---
 
-// smbHosts returns the IP addresses of the hosts used by the connections
-// (resolving names), and refreshes the labels shown in the TUI.
-func (d *Daemon) smbHosts(force bool) []string {
+// connHosts returns the IP addresses of the SMB hosts of the connections and the
+// S3 servers on ports other than HTTPS (resolving names), and refreshes the labels
+// shown in the TUI.
+func (d *Daemon) connHosts(force bool) ([]string, []firewall.Endpoint) {
 	d.mu.Lock()
-	var hosts []string
+	var hosts, smbHosts []string
+	s3Ports := map[string][]string{} // port -> hosts
 	labels := map[string]string{}
-	for _, c := range d.cfg.Connections {
-		if c.IsOneDrive() {
-			continue
+	label := func(host, name string) {
+		hosts = append(hosts, host)
+		if labels[host] == "" {
+			labels[host] = name
 		}
-		hosts = append(hosts, c.Host)
-		if labels[c.Host] == "" {
-			labels[c.Host] = c.Name
+	}
+	for _, c := range d.cfg.Connections {
+		switch {
+		case c.IsSMB():
+			smbHosts = append(smbHosts, c.Host)
+			label(c.Host, c.Name)
+		case c.IsS3():
+			if host, port, ok := c.S3HostPort(); ok && port != "443" {
+				s3Ports[port] = append(s3Ports[port], host)
+				label(host, c.Name)
+			}
 		}
 	}
 	d.mu.Unlock()
@@ -96,17 +108,15 @@ func (d *Daemon) smbHosts(force bool) []string {
 		fw.hosts, fw.resolved = resolved, time.Now()
 		fw.unresolved = nil
 		for _, h := range hosts {
-			if len(resolved[h]) == 0 {
+			if len(resolved[h]) == 0 && !slices.Contains(fw.unresolved, h) {
 				fw.unresolved = append(fw.unresolved, h)
 			}
 		}
 		sort.Strings(fw.unresolved)
 	}
 	names := map[string]string{}
-	set := map[string]bool{}
 	for h, ips := range fw.hosts {
 		for _, ip := range ips {
-			set[ip] = true
 			label := h
 			if labels[h] != "" && !strings.EqualFold(labels[h], h) {
 				label = labels[h] + " (" + h + ")"
@@ -115,6 +125,25 @@ func (d *Daemon) smbHosts(force bool) []string {
 		}
 	}
 	fw.hostNames = names
+
+	var endpoints []firewall.Endpoint
+	for port, hs := range s3Ports {
+		if ips := addressesOf(fw.hosts, hs); len(ips) > 0 {
+			endpoints = append(endpoints, firewall.Endpoint{Port: port, Hosts: ips})
+		}
+	}
+	sort.Slice(endpoints, func(a, b int) bool { return endpoints[a].Port < endpoints[b].Port })
+	return addressesOf(fw.hosts, smbHosts), endpoints
+}
+
+// addressesOf returns the sorted IP addresses of some hosts, each once.
+func addressesOf(known map[string][]string, hosts []string) []string {
+	set := map[string]bool{}
+	for _, h := range hosts {
+		for _, ip := range known[h] {
+			set[ip] = true
+		}
+	}
 	out := make([]string, 0, len(set))
 	for ip := range set {
 		out = append(out, ip)
@@ -123,13 +152,18 @@ func (d *Daemon) smbHosts(force bool) []string {
 	return out
 }
 
-// usesCloud reports whether there are OneDrive connections (they need HTTPS).
+// usesCloud reports whether there are connections that need HTTPS to any host.
 func (d *Daemon) usesCloud() bool {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	for _, c := range d.cfg.Connections {
 		if c.IsOneDrive() {
 			return true
+		}
+		if c.IsS3() {
+			if _, port, ok := c.S3HostPort(); !ok || port == "443" {
+				return true
+			}
 		}
 	}
 	return false
@@ -141,7 +175,8 @@ func (d *Daemon) fwScript(f config.Firewall, forceResolve bool) string {
 	if !f.Enabled {
 		return firewall.DisableScript()
 	}
-	return firewall.Script(firewall.Plan(f, d.smbHosts(forceResolve), d.usesCloud()))
+	smb, s3 := d.connHosts(forceResolve)
+	return firewall.Script(firewall.Plan(f, smb, d.usesCloud(), s3))
 }
 
 // fwApplyLocked loads a script; requires d.fw.mu.
@@ -224,7 +259,7 @@ func (d *Daemon) handleFirewallGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *Daemon) firewallStatus() api.FirewallStatus {
-	smb := d.smbHosts(false)
+	smb, s3 := d.connHosts(false)
 	d.mu.Lock()
 	settings := d.cfg.Firewall
 	d.mu.Unlock()
@@ -237,7 +272,7 @@ func (d *Daemon) firewallStatus() api.FirewallStatus {
 	d.fw.mu.Unlock()
 
 	if st.Settings.Enabled {
-		st.Rules = firewall.Plan(st.Settings, smb, d.usesCloud())
+		st.Rules = firewall.Plan(st.Settings, smb, d.usesCloud(), s3)
 	}
 	if st.Available {
 		counters, exists, err := firewall.Counters(d.fw.runner)
@@ -360,7 +395,7 @@ func (d *Daemon) saveFirewall(f config.Firewall) error {
 }
 
 // unresolvedWarning reports connection hosts that cannot be resolved while the
-// firewall is on: outgoing SMB to them is blocked, so their syncs would fail.
+// firewall is on: outgoing traffic to them is blocked, so their syncs would fail.
 func (d *Daemon) unresolvedWarning() string {
 	d.mu.Lock()
 	on := d.cfg.Firewall.Enabled
@@ -373,6 +408,6 @@ func (d *Daemon) unresolvedWarning() string {
 	if len(d.fw.unresolved) == 0 {
 		return ""
 	}
-	return Tf("firewall: cannot resolve %s: SMB to these hosts is blocked (use IP addresses in the connections)",
+	return Tf("firewall: cannot resolve %s: connections to these hosts are blocked (use IP addresses in the connections)",
 		strings.Join(d.fw.unresolved, ", "))
 }
